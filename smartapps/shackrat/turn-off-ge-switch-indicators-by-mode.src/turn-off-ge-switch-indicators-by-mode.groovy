@@ -46,7 +46,7 @@ def initialize() {
 }
 
 def modeChangeEvent(evt) {
-	if (list.find { it == location.mode }) {
+	if (modes.find { it == location.mode } != null) {
 		log.debug "Killing LED Indicators for ${location.mode}"
 		switches.indicatorNever()
 	}
@@ -60,6 +60,7 @@ def modeChangeEvent(evt) {
 		}
 	}
 }
+
 
 
 
