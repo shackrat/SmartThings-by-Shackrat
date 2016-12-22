@@ -1,0 +1,355 @@
+/**
+ * Smart Button Controller Child App
+ *
+ * Copyright 2016 Steve White
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at:
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ * for the specific language governing permissions and limitations under the License.
+ *
+ */
+
+definition(
+	name: "Smart Button Controller Child App",
+	namespace: "shackrat/smartbuttoncontroller",
+	author: "Steve White",
+	description: "Controls lights, switches, & routines using Smart Buttons.",
+	category: "My Apps",
+    parent: "shackrat/parent:Smart Button Controller",
+	iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/App-BigButtonsAndSwitches.png",
+	iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/App-BigButtonsAndSwitches@2x.png",
+	iconX3Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/App-BigButtonsAndSwitches@2x.png"
+)
+
+
+preferences
+{
+	page (name: "mainPage", title: "Create a new Smart Button Automation")
+    page (name: "runAtTime", title: "Smart Button Controller")
+    page (name: "namePage", title: "Smart Button Controller")
+}
+
+
+def installed()
+{
+	log.info "Smart Button Controller Installed"
+	initialize()
+}
+
+
+def updated()
+{
+	log.info "Smart Button Controller Updated"
+	unsubscribe()
+	unschedule()
+	initialize()
+    
+    state.pressToggleOn = [:]
+    state.pressToggleOff = [:]
+}
+
+
+def initialize()
+{
+	log.info "Smart Button Controller Initialized"
+	subscribe(smartButton, "button", handleButtonEvent)
+}
+
+
+def handleButtonEvent(evt)
+{
+    log.trace "== [${app.name}]: Beginning execution of event id [${evt.id}] =="
+
+	if (!allowedToRun)
+    {
+    	log.trace "== button event not allowed, aborting. =="
+    	return
+	}
+    
+ 	log.trace "=== Button [${evt.value}] event ==="
+ 
+	// Button pressed
+	if (evt?.value == "pushed")
+	{
+		// Turn ON/OFF
+        onPressSwitches?.on()
+		offPressSwitches?.off()
+
+		// Toggles
+		def on = pressToggleSwitches.findAll { it.currentValue("switch") == "on" }
+		def off = pressToggleSwitches.findAll { it.currentValue("switch") == "off" }
+
+		log.trace "==== Turning ${on} switches off..."
+		on.collect
+        {
+			it.off()
+			if (delayCommands && commandDelay > 0) pause(commandDelay)
+        }
+        
+		log.trace "==== Turning ${off} switches on..."
+        off.collect
+        {
+			it.on()
+			if (delayCommands && commandDelay > 0) pause(commandDelay)
+        }
+        
+        // Run routine
+        location.helloHome?.execute(settings.hhPressAction)
+	}
+
+
+	// Button held
+	if (evt?.value == "held")
+	{
+		// Turn ON/OFF
+        onHeldSwitches?.on()
+		offHeldSwitches?.off()
+
+		// Toggles
+		def on = heldToggleSwitches.findAll { it.currentValue("switch") == "on" }
+		def off = heldToggleSwitches.findAll { it.currentValue("switch") == "off" }
+
+		log.trace "==== Turning ${on} switches off..."
+		on.collect
+        {
+			it.off()
+			if (delayCommands && commandDelay > 0) pause(commandDelay)
+        }
+        
+        log.trace "==== Turning ${off} switches on..."
+        off.collect
+		{
+			it.on()
+			if (delayCommands && commandDelay > 0) pause(commandDelay)
+		}
+
+		// Run routine
+        location.helloHome?.execute(settings.hhHeldAction)
+	}
+    
+    log.trace "== [${app.name}]: Execution Complete =="
+}
+
+
+// App allowed to run?
+private getAllowedToRun()
+{
+	allowedMode && allowedDays && allowedTime
+}
+
+
+def mainPage()
+{
+	dynamicPage(name: "mainPage", title: "Create a new Smart Button Automation", uninstall: true, install: false, nextPage: "namePage")
+    {
+		def hhActions = location.helloHome?.getPhrases()*.label
+		if (hhActions)
+        {
+			hhActions.sort()
+		}
+
+		section("When...")
+		{
+			input "smartButton", "capability.button", title: "This button...", required: true, multiple: false
+		}
+    
+		section("Is pressed...")
+		{
+			input "onPressSwitches", "capability.switch", title: "Turn these devices ON...", required: false, multiple: true
+			input "offPressSwitches", "capability.switch", title: "Turn these devices OFF...", required: false, multiple: true
+			input "pressToggleSwitches", "capability.switch", title: "Toggle these devices...", required: false, multiple: true
+			if (hhActions)
+            {
+				input "hhPressAction", "enum", title: "Run this routine...", options: hhActions, required: false
+			}
+		}
+
+		section("Is held...")
+		{
+			input "onHeldSwitches", "capability.switch", title: "Turn these devices ON...", required: false, multiple: true
+			input "offHeldSwitches", "capability.switch", title: "Turn these devices OFF...", required: false, multiple: true
+			input "heldToggleSwitches", "capability.switch", title: "Toggle these devices...", required: false, multiple: true
+			if (hhActions)
+            {
+				input "hhHeldAction", "enum", title: "Run this routine...", options: hhActions, required: false
+			}
+		}
+                
+    	section("Options")
+    	{
+			def timeLabel = formatTimeLabel()
+
+			href "runAtTime", title: "Only during a certain time", description: timeLabel ?: "Tap to set", state: timeLabel ? "complete" : null
+			input "runDays", "enum", title: "Only on certain days of the week", multiple: true, required: false,
+				options: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+			input "modes", "mode", title: "Only when mode is", multiple: true, required: false
+		}
+        
+        section("Diagnostic")
+        {
+			input "delayCommands", "bool", title: "Insert a delay between device commands?", defaultValue: false, submitOnChange: true
+			if (delayCommands == true)
+        	{
+				input "commandDelay", "number", title: "Delay (ms):", defaultValue: 100
+			}
+        }
+	}
+}
+
+
+def runAtTime()
+{
+	dynamicPage(name:"runAtTime", title: "Only during a certain time", uninstall: false)
+	{
+		section()
+		{
+			input "startingAt", "enum", title: "Starting at", options: ["A specific time", "Sunrise", "Sunset"], defaultValue: "A specific time", submitOnChange: true
+			if (startingAt in [null, "A specific time"])
+				input "startingTime", "time", title: "Start time", required: false
+			else
+            {
+				if (startingAt == "Sunrise")
+					input "startSunriseOffset", "number", range: "*..*", title: "Offset in minutes (+/-)", required: false
+				else if (startingAt == "Sunset")
+					input "startSunsetOffset", "number", range: "*..*", title: "Offset in minutes (+/-)", required: false
+			}
+		}
+		
+		section()
+		{
+			input "endingAt", "enum", title: "Ending at", options: ["A specific time", "Sunrise", "Sunset"], defaultValue: "A specific time", submitOnChange: true
+			if (endingAt in [null, "A specific time"])
+				input "endingTime", "time", title: "End time", required: false
+			else
+			{
+				if (endingAt == "Sunrise")
+					input "endSunriseOffset", "number", range: "*..*", title: "Offset in minutes (+/-)", required: false
+				else if (endingAt == "Sunset")
+					input "endSunsetOffset", "number", range: "*..*", title: "Offset in minutes (+/-)", required: false
+			}
+		}
+	}
+}
+
+
+// page for allowing the user to give the automation a custom name
+def namePage()
+{
+	def l = "${smartButton} Automation"
+	if (!overrideLabel)
+	{
+		// if the user selects to not change the label, give a default label
+		log.debug "will set default label of $l"
+		app.updateLabel(l)
+	}
+
+	dynamicPage(name: "namePage", uninstall: true, install: true)
+	{
+		if (overrideLabel)
+		{
+			section("Automation name")
+			{
+				label title: "Enter custom name", defaultValue: app.label, required: false
+			}
+		}
+		else
+		{
+			section("Automation name")
+			{
+				paragraph app.label
+			}
+		}
+		section
+		{
+			input "overrideLabel", "bool", title: "Edit automation name", defaultValue: "false", required: "false", submitOnChange: true
+		}
+	}
+}
+
+
+private formatTimeLabel()
+{
+	def result = ""
+    
+	if (startingAt == "Sunrise") result = startingAt + offset(startSunriseOffset)
+	else if (startingAt == "Sunset") result = startingAt + offset(startSunsetOffset)
+	else if (startingTime) result = hhmm(startingTime)
+    
+    result += " to "
+    
+ 	if (endingAt == "Sunrise") result += endingAt + offset(endSunriseOffset)
+	else if (endingAt == "Sunset") result += endingAt + offset(endSunsetOffset)
+	else if (endingTime) result += hhmm(endingTime, "h:mm a z")   
+}
+
+
+private getAllowedDays()
+{
+	def result = true
+	if (runDays)
+    {
+		def df = new java.text.SimpleDateFormat("EEEE")
+		if (location.timeZone) df.setTimeZone(location.timeZone)
+		else df.setTimeZone(TimeZone.getTimeZone("America/New_York"))
+		def day = df.format(new Date())
+		result = days.contains(day)
+	}
+	return result
+}
+
+
+private getAllowedTime()
+{
+	def result = true
+	if ((startingTime && endingTime) ||
+	(startingTime && endingAt in ["Sunrise", "Sunset"]) ||
+	(startingAt in ["Sunrise", "Sunset"] && endingTime) ||
+	(startingAt in ["Sunrise", "Sunset"] && endingAt in ["Sunrise", "Sunset"]))
+	{
+		def currTime = now()
+		def start = null
+		def stop = null
+
+		def startSunTime = getSunriseAndSunset(zipCode: zipCode, sunriseOffset: startSunriseOffset, sunsetOffset: startSunsetOffset)
+		if (startingAt == "Sunrise") start = startSunTime.sunrise.time
+		else if (startingAt == "Sunset") start = startSunTime.sunset.time
+		else if (startingTime) start = timeToday(startingTime,location.timeZone).time
+
+		endSunTime = getSunriseAndSunset(zipCode: zipCode, sunriseOffset: endSunriseOffset, sunsetOffset: endSunsetOffset)
+		if (endingAt == "Sunrise") stop = endSunTime.sunrise.time
+		else if (endingAt == "Sunset") stop = endSunTime.sunset.time
+		else if (endingTime) stop = timeToday(endingTime,location.timeZone).time
+		
+        result = start < stop ? currTime >= start && currTime <= stop : currTime <= stop || currTime >= start
+	}
+	return result
+}
+
+
+private getAllowedMode()
+{
+	def result = !modes || modes.contains(location.mode)
+	log.trace "==== AllowedMode = $result"
+	return result
+}
+
+
+private offset(value)
+{
+    def result = value ? ((value > 0 ? "+" : "") + value + " min") : ""
+}
+
+
+private hhmm(time, fmt = "h:mm a")
+{
+	def t = timeToday(time, location.timeZone)
+	def f = new java.text.SimpleDateFormat(fmt)
+	f.setTimeZone(location.timeZone ?: timeZone(time))
+	f.format(t)
+}
