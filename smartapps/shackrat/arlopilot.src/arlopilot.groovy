@@ -59,7 +59,7 @@ def installed()
 {
 	logInfo "ArloPilot Installed"
 
-	state.selectedDevices = []
+	state.installed = true
  	initialize()
 }
 
@@ -128,6 +128,12 @@ def mainPage()
 		authValid = testArloLogin()
 	}
 
+	// Clean install?
+	if (!state.installed && state.selectedDevices == null)
+	{
+		state.selectedDevices = []
+	}
+
 	dynamicPage(name: "mainPage", title: "ArloPilot Arlo Main Menu", uninstall: true, install: true)
 	{
 		section()
@@ -152,17 +158,17 @@ def mainPage()
 			{
 				section("Smart Home Monitor (" + (isSHMConnected ? "Connected" : "Not Connected") + ")")
 				{
-					if (settings.enableSHM) href "configureSHMMapping", title: isSHMConnected ? "Connected to SHM!" : "Connect to SHM Alarm", description: "Change Arlo mode based on Smart Home Monitor alarm state.", state: isSHMConnected ? "complete" : null
+					if (!state.installed || settings.enableSHM) href "configureSHMMapping", title: isSHMConnected ? "Connected to SHM!" : "Connect to SHM Alarm", description: "Change Arlo mode based on Smart Home Monitor alarm state.", state: isSHMConnected ? "complete" : null
 					else paragraph "SHM integration is disabled."
 				}
 				section("Mode Automation Management (" + (state.modeAutomations > 0 ? state.modeAutomations : "Not") + " Configured)")
 				{
-					if (settings.enableModes) href "modeManagement", title: "Synchronize Arlo Modes", description: "Configure SmartThings modes to change Arlo modes.", state: state.modeAutomations ? "complete" : null
+					if (!state.installed || settings.enableModes) href "modeManagement", title: "Synchronize Arlo Modes", description: "Configure SmartThings modes to change Arlo modes.", state: state.modeAutomations ? "complete" : null
 					else paragraph "SmartThings mode event integration is disabled."
 				}
 				section("Device Automation Management (" + (state.deviceAutomations > 0 ? state.deviceAutomations : "Not") + " Configured)")
 				{
-					if (settings.enableDevices) href "deviceAutomationManagement", title: "Trigger Arlo Modes", description: "Configure SmartThings devices to trigger Arlo modes.", state: state.deviceAutomations ? "complete" : null
+					if (!state.installed || settings.enableDevices) href "deviceAutomationManagement", title: "Trigger Arlo Modes", description: "Configure SmartThings devices to trigger Arlo modes.", state: state.deviceAutomations ? "complete" : null
                     else paragraph "SmartThings device event integration is disabled."
 				}
 
@@ -489,7 +495,7 @@ def configureSHMMapping()
 {
 	def arloModeCapableDevices = arloDevices("basestation") + arloDevices("arloq")
 
-	dynamicPage(name: "configureSHMMapping", title: "ArloPilot Smart Home Monitor Alarm Configuration", install: false, uninstall: false)
+	dynamicPage(name: "configureSHMMapping", title: "ArloPilot Smart Home Monitor Alarm Configuration", nextPage: "mainPage", install: false, uninstall: false)
 	{
 		if (arloModeCapableDevices?.size())
 		{
