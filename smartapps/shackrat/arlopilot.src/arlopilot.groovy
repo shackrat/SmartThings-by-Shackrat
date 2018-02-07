@@ -158,17 +158,17 @@ def mainPage()
 			{
 				section("Smart Home Monitor (" + (isSHMConnected ? "Connected" : "Not Connected") + ")")
 				{
-					if (!state.installed || settings.enableSHM) href "configureSHMMapping", title: isSHMConnected ? "Connected to SHM!" : "Connect to SHM Alarm", description: "Change Arlo mode based on Smart Home Monitor alarm state.", state: isSHMConnected ? "complete" : null
+					if (settings.enableSHM == null || settings.enableSHM) href "configureSHMMapping", title: isSHMConnected ? "Connected to SHM!" : "Connect to SHM Alarm", description: "Change Arlo mode based on Smart Home Monitor alarm state.", state: isSHMConnected ? "complete" : null
 					else paragraph "SHM integration is disabled."
 				}
 				section("Mode Automation Management (" + (state.modeAutomations > 0 ? state.modeAutomations : "Not") + " Configured)")
 				{
-					if (!state.installed || settings.enableModes) href "modeManagement", title: "Synchronize Arlo Modes", description: "Configure SmartThings modes to change Arlo modes.", state: state.modeAutomations ? "complete" : null
+					if (settings.enableModes == null || settings.enableModes) href "modeManagement", title: "Synchronize Arlo Modes", description: "Configure SmartThings modes to change Arlo modes.", state: state.modeAutomations ? "complete" : null
 					else paragraph "SmartThings mode event integration is disabled."
 				}
 				section("Device Automation Management (" + (state.deviceAutomations > 0 ? state.deviceAutomations : "Not") + " Configured)")
 				{
-					if (!state.installed || settings.enableDevices) href "deviceAutomationManagement", title: "Trigger Arlo Modes", description: "Configure SmartThings devices to trigger Arlo modes.", state: state.deviceAutomations ? "complete" : null
+					if (settings.enableDevices == null || settings.enableDevices) href "deviceAutomationManagement", title: "Trigger Arlo Modes", description: "Configure SmartThings devices to trigger Arlo modes.", state: state.deviceAutomations ? "complete" : null
                     else paragraph "SmartThings device event integration is disabled."
 				}
 
@@ -598,7 +598,7 @@ def SHMStateHandler(evt)
 	Map arloDevices = [:]
 	def notifyPush = false
 
-	if (!settings.enableSHM)
+	if (settings.enableSHM != null && !settings.enableSHM)
 	{
 		logWarn "Smart Home Monitor features are currently disabled!"
 		return false
@@ -609,7 +609,7 @@ def SHMStateHandler(evt)
 	switch (evt.value)
 	{
 		case "away":
-			arloDevices = getShmAwayDevices
+			arloDevices = shmAwayDevices
 			notifyPush = settings.SHMArmAway_notifySendPush
 			break
 		case "stay":
@@ -956,7 +956,7 @@ private getIsSHMConnected()
 */
 public getIsSTModeChangeEnabled()
 {
-	return settings.enableModes ? true : false
+	return (settings.enableModes != null && settings.enableModes) ? true : false
 }
 
 
@@ -967,7 +967,7 @@ public getIsSTModeChangeEnabled()
 */
 public getIsDeviceEventsEnabled()
 {
-	return settings.enableDevices ? true : false
+	return (settings.enableDevices != null && settings.enableDevices) ? true : false
 }
 
 
