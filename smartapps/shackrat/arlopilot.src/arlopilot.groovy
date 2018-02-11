@@ -87,7 +87,7 @@ def initialize()
 	logDebug "Initialize: There are ${childApps.size()} automations."
 
 	state.modeAutomations = 0
-    state.deviceAutomations = 0
+	state.deviceAutomations = 0
 	childApps.each {child ->
 		logDebug "   ... automation: ${child.label}"
 		if (child.name == "ArloPilot Mode Automation") state.modeAutomations = state.modeAutomations + 1
@@ -116,7 +116,7 @@ def mainPage()
 
 	// Update app counts
 	state.modeAutomations = 0
-    state.deviceAutomations = 0
+	state.deviceAutomations = 0
 	childApps.each {child ->
 		if (child.name == "ArloPilot Mode Automation") state.modeAutomations = state.modeAutomations + 1
 		if (child.name == "ArloPilot Device Automation") state.deviceAutomations = state.deviceAutomations + 1
@@ -169,7 +169,7 @@ def mainPage()
 				section("Device Automation Management (" + (state.deviceAutomations > 0 ? state.deviceAutomations : "Not") + " Configured)")
 				{
 					if (settings.enableDevices == null || settings.enableDevices) href "deviceAutomationManagement", title: "Trigger Arlo Modes", description: "Configure SmartThings devices to trigger Arlo modes.", state: state.deviceAutomations ? "complete" : null
-                    else paragraph "SmartThings device event integration is disabled."
+					else paragraph "SmartThings device event integration is disabled."
 				}
 
 			}
@@ -501,10 +501,10 @@ def configureSHMMapping()
 		{
 			section()
 			{
-				if (settings.enableSHM)
+				if (settings.enableSHM == null || settings.enableSHM)
 					paragraph "Using this page you can configure Arlo modes to automatically change based on Smart Home Monitor alarm state."
 				else
-					paragraph "Smart Home Monitor features are currently disabled in ArloPilot settings!"
+					paragraph "Smart Home Monitor features are currently disabled in ArloPilot settings!", required: true
 			}
 			section("SHM Armed - Stay")
 			{
@@ -1082,7 +1082,7 @@ private logError(msgOut)
 	log.error msgOut
 }
 
-private getAppVersion(){1.0}
+private getAppVersion(){1.1}
 
 private getVersionCheck()
 {

@@ -81,11 +81,18 @@ def initialize()
 	}
 
 
-	// Switch automation?
+	// Switch ON automation?
 	if (settings.stSwitchOn)
 	{
-		logTrace "Subscribing to switch events for ${settings.stSwitchOn}"
+		logTrace "Subscribing to switch on events for ${settings.stSwitchOn}"
 		subscribe(settings.stSwitchOn, "switch.on", switchEvent)
+	}
+
+	// Switch OFF automation?
+	else if (settings.stSwitchOff)
+	{
+		logTrace "Subscribing to switch off events for ${settings.stSwitchOff}"
+		subscribe(settings.stSwitchOff, "switch.off", switchEvent)
 	}
 
 	// Presence arrival automation?
@@ -134,17 +141,19 @@ def mainPage()
 		section("SmartThings Device Triggers")
 		{
 			paragraph "Configure any one of the following triggers..."
-			if (!stPresenceDepart && !stSwitchOn && !pushButton)
+			if (!stPresenceDepart && !stSwitchOn && !pushButton && !stSwitchOff)
 				input "stPresenceArrive", "capability.presenceSensor", title: "Someone Arrives", description: "When any of these presence sensors arrives...", multiple: true, required: false, submitOnChange: true
-			if (!stPresenceArrive && !stSwitchOn && !pushButton)
+			if (!stPresenceArrive && !stSwitchOn && !pushButton && !stSwitchOff)
 				input "stPresenceDepart", "capability.presenceSensor", title: "Everyone Leaves", description: "When all of these presence sensors depart...", multiple: true, required: false, submitOnChange: true
-			if (!stPresenceArrive && !stPresenceDepart && !pushButton)
-				input "stSwitchOn", "capability.switch", title: "Switch Turns On", description: "When this switch turns on...", multiple: false, required: false, submitOnChange: true
-			if (!stPresenceArrive && !stPresenceDepart && !stSwitchOn)
+			if (!stPresenceArrive && !stPresenceDepart && !stSwitchOn && !stSwitchOff)
 				input "pushButton", "capability.button", title: "Button Pressed", description: "When this button is pressed...", multiple: false, required: false, submitOnChange: true
+			if (!stPresenceArrive && !stPresenceDepart && !pushButton && !stSwitchOff)
+				input "stSwitchOn", "capability.switch", title: "Switch Turns On", description: "When this switch turns on...", multiple: false, required: false, submitOnChange: true
+			if (!stPresenceArrive && !stPresenceDepart && !pushButton && !stSwitchOn)
+				input "stSwitchOff", "capability.switch", title: "Switch Turns Off", description: "When this switch turns off...", multiple: false, required: false, submitOnChange: true
 		}
 
-		if (stPresenceArrive || stPresenceDepart || stSwitchOn || pushButton)
+		if (stPresenceArrive || stPresenceDepart || stSwitchOn || pushButton || stSwitchOff)
 		{
 			section("Arlo Devices")
 			{
@@ -342,7 +351,7 @@ List getSelectedArloDeviceIds()
 def switchEvent(evt)
 {
 	// Even though we're subscribed only to on events it doesn't hurt to double-check
-	if (settings.automationEnabled && evt.value == "on")
+	if (settings.automationEnabled && (evt.value == "on" || evt.value == "off"))
 	{
 		if (executionAllowed)
 		{
