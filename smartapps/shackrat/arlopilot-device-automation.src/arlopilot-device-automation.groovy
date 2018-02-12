@@ -351,7 +351,7 @@ List getSelectedArloDeviceIds()
 def switchEvent(evt)
 {
 	// Even though we're subscribed only to on events it doesn't hurt to double-check
-	if (settings.automationEnabled && (evt.value == "on" || evt.value == "off"))
+	if (isAutomationEnabled && (evt.value == "on" || evt.value == "off"))
 	{
 		if (executionAllowed)
 		{
@@ -369,7 +369,7 @@ def switchEvent(evt)
 def buttonEvent(evt)
 {
 	// Even though we're subscribed only to on events it doesn't hurt to double-check
-	if (settings.automationEnabled && evt.value == "pushed")
+	if (isAutomationEnabled && evt.value == "pushed")
 	{
 		if (executionAllowed)
 		{
@@ -390,7 +390,7 @@ def presenceArriveEvent(evt)
 	def someoneArrived = settings.stPresenceArrive.find{it.currentPresence == "present"}
 
 	// Even though we're subscribed only to on events it doesn't hurt to double-check
-	if (settings.automationEnabled && evt.value == "present" && someoneArrived)
+	if (isAutomationEnabled && evt.value == "present" && someoneArrived)
 	{
 		doArloModeChange()
 	}
@@ -408,7 +408,7 @@ def presenceDepartEvent(evt)
 	def someoneHome = settings.stPresenceArrive.find{it.currentPresence == "present"}
 
 	// Even though we're subscribed only to on events it doesn't hurt to double-check
-	if (settings.automationEnabled && evt.value == "present" && !someoneHome)
+	if (isAutomationEnabled && evt.value == "present" && !someoneHome)
 	{
 		doArloModeChange()
 	}
@@ -446,6 +446,17 @@ private doArloModeChange()
 
 
 /*
+	getIsAutomationEnabled
+
+	Returns true if device event automations are enabled; false if not
+*/
+public getIsAutomationEnabled()
+{
+	return (settings.automationEnabled != null && settings.automationEnabled) ? true : false
+}
+
+
+/*
 	getAppLabel
 
 	Creates a pretty label for the automation.
@@ -462,6 +473,10 @@ private getAppLabel()
 	if (settings.stSwitchOn)
 	{
 		return "Change ${arloBases} mode when ${settings.stSwitchOn} turns on."
+	}
+	else if (settings.stSwitchOff)
+	{
+		return "Change ${arloBases} mode when ${settings.stSwitchOn} turns off."
 	}
 	else if (settings.stPresenceArrive)
 	{

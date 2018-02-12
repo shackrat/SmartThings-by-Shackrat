@@ -276,7 +276,7 @@ def generalSettings()
 def modeChangeEvent(evt)
 {
 	// Simply ignore the mode that is passed by the event and check the current mode
-	if (settings.automationEnabled && settings.stModes.find { it == location.mode } != null)
+	if (isAutomationEnabled && settings.stModes.find { it == location.mode } != null)
 	{
 		if (executionAllowed)
 		{
@@ -295,6 +295,17 @@ def modeChangeEvent(evt)
 			else logWarn "Mode Change Events are Disabled!"
 		}
 	}
+}
+
+
+/*
+	getIsAutomationEnabled
+
+	Returns true if mode event automations are enabled; false if not
+*/
+public getIsAutomationEnabled()
+{
+	return (settings.automationEnabled != null && settings.automationEnabled) ? true : false
 }
 
 

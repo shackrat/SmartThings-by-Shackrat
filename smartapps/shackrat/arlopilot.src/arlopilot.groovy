@@ -1082,7 +1082,7 @@ private logError(msgOut)
 	log.error msgOut
 }
 
-private getAppVersion(){1.1}
+private getAppVersion(){1.2}
 
 private getVersionCheck()
 {
