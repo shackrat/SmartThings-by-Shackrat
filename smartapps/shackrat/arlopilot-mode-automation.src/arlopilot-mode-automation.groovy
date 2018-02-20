@@ -39,6 +39,7 @@ preferences
 	page (name: "schedulePage", title: "Automation Execution Restrictions")
 	page (name: "generalSettings", title: "Automation General Settings")
 	page (name: "namePage", title: "Name Page")
+	page (name: "configureDeviceActions", title: "Configure Device Actions")
 }
 
 
@@ -119,12 +120,13 @@ def mainPage()
 
 		section("Synchronize Arlo Mode with SmartThings Modes")
 		{
-			input "stModes", "mode", title: "When the SmartThings mode changes to any of the following...", description: "Select any available SmartThings mode(s).", multiple: true, required: true, submitOnChange: false
-			input "arloBase", "enum", title: "On this Arlo base station or Arlo-Q camera...", description: "Select a connected Arlo base station or camera.", options: deviceOptions, multiple: false, required: true, submitOnChange: true
-			if (arloBase) input "arloMode_"+arloBase, "enum", title: "Set the Arlo mode to...", description: "Choose an Arlo mode for the selected Arlo base station or camera.", options: arloModes, multiple: false, required: true, submitOnChange: true
+			input "stModes", "mode", title: "When the SmartThings mode changes to any of the following...", description: "Select any available SmartThings mode(s).", multiple: true, required: true, submitOnChange: true
+			if (stModes) input "arloBase", "enum", title: "On this Arlo base station or Arlo-Q camera...", description: "Select a connected Arlo base station or camera.", options: deviceOptions, multiple: false, required: true, submitOnChange: true
+			if (arloBase) input "arloMode_"+arloBase, "enum", title: "Set the Arlo mode to...", description: "Choose an Arlo mode for the selected Arlo base station or camera.", options: arloModes, multiple: false, required: false, submitOnChange: true
+			if (stModes && arloBase) href "configureDeviceActions", title: "Change these camera settings...", description: "Change device properties like camera on/off and night vision control.", state: checkConfigSet("devAction") ? "complete" : null
 		}
 
-		if (stModes && arloBase && state.arloModeName)
+		if (stModes && arloBase && (state.arloModeName || checkConfigSet("devAction")))
 		{
 			section("Options")
 			{
@@ -269,12 +271,69 @@ def generalSettings()
 
 
 /*
+	configureDeviceActions
+
+	UI Page: Configures a specific device for a specific SmartThings mode.
+*/
+def configureDeviceActions()
+{
+	def arloBase = parent.getArloDevice(settings.arloBase)
+	def arloCameraCapableDevices = parent.arloDevices("", arloBase.deviceId)
+	arloCameraCapableDevices.removeAll{it.deviceType == "basestation" || it.deviceType == "siren"}
+
+	Map arloCameras = [:]
+	arloCameraCapableDevices?.each {
+		arloCameras << [(it.deviceId): it.deviceName]
+	}
+
+	Map switchOnCameras = parent.deviceXORFilter(arloCameras, settings.devAction_CamOff)
+	Map switchOffCameras = parent.deviceXORFilter(arloCameras, settings.devAction_CamOn)
+	Map nightVisionOnCameras = parent.deviceXORFilter(arloCameras, settings.devAction_NightVisionOff)
+	Map nightVisionOffCameras = parent.deviceXORFilter(arloCameras, settings.devAction_NightVisionOn)
+
+	Map powerSaveLowCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveOptimal, settings.devAction_PowerSaveHigh)
+	Map powerSaveOptimalCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveLow, settings.devAction_PowerSaveHigh)
+	Map powerSaveHighCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveLow, settings.devAction_PowerSaveOptimal)
+
+	dynamicPage(name: "configureDeviceActions", title: "ArloPilot Device Actions", nextPage: "mainPage", install: false, uninstall: false)
+	{
+		section()
+		{
+			paragraph "ArloPilot Device Actions enable changing individual camera parameters when SmartThings mode changes occur."
+			if (!automationEnabled && (app.label != null && app.label != app.name))
+				paragraph title: "Automation Disabled!", required: true, "This automation has been disabled.  It can be enabled using the switch below."
+
+		}
+
+		section("Camera Control")
+		{
+			input "devAction_CamOn", "enum", title: "Enable Recording", description: "Disable privacy mode on these cameras...", options: switchOnCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_CamOff", "enum", title: "Disable Recording", description: "Enable privacy mode on these cameras...", options: switchOffCameras, multiple: true, required: false, submitOnChange: true
+		}
+		section("Night Vision Control")
+		{
+			input "devAction_NightVisionOn", "enum", title: "Enable Night Vision", description: "Enable night vision on these cameras...", options: nightVisionOnCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_NightVisionOff", "enum", title: "Disable Night Vision", description: "Disable night vision on these cameras...", options: nightVisionOffCameras, multiple: true, required: false, submitOnChange: true
+		}
+		section("Power Saver Control")
+		{
+			input "devAction_PowerSaveLow", "enum", title: "Best Video", description: "Set these cameras to the highest video quality...", options: powerSaveLowCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_PowerSaveOptimal", "enum", title: "Optimal", description: "Set these cameras an optimal balance of video quality and battery life...", options: powerSaveOptimalCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_PowerSaveHigh", "enum", title: "Best Battery Life", description: "Set these cameras to optimize battery life...", options: powerSaveHighCameras, multiple: true, required: false, submitOnChange: true
+		}
+	}
+}
+
+
+/*
 	modeChangeEvent
 
 	Handler function for mode change events.
 */
 def modeChangeEvent(evt)
 {
+	Map devActions = deviceActions
+
 	// Simply ignore the mode that is passed by the event and check the current mode
 	if (isAutomationEnabled && settings.stModes.find { it == location.mode } != null)
 	{
@@ -291,6 +350,21 @@ def modeChangeEvent(evt)
 				{
 					sendPush(settings.notifyCustomText ? settings.notifyCustomText : "${app.label} has ${result ? "completed" : "FAILED!"} .")
 				}
+
+				// Process device actions
+				if (devActions.size())
+				{
+					logTrace "modeChangeEvent: Processing device actions for event - ${evt.value}..."
+					deviceActions.each
+					{propCmd, deviceIdList ->
+						deviceIdList?.each
+						{
+							"${propCmd}"(it)
+							pause(500)
+						}
+					}
+				}
+
 			}
 			else logWarn "Mode Change Events are Disabled!"
 		}
@@ -317,7 +391,12 @@ public getIsAutomationEnabled()
 private getAppLabel()
 {
 	def modeList = stModes.join(", ")
-	return "Set ${state.arloBaseName} to \"${state.arloModeName}\" for ${modeList} mode" + (stModes.size() > 1 ? "s" : "") + "."
+
+	def appName = ""
+	if (state.arloModeName) appName += "Set ${state.arloBaseName} to \"${state.arloModeName}\""
+	if (state.arloModeName && checkConfigSet("devAction")) appName += " and "
+	if (checkConfigSet("devAction")) appName += "Change camera settings"
+	appName += " for ${modeList} mode" + (stModes.size() > 1 ? "s" : "") + "."
 }
 
 
@@ -462,6 +541,48 @@ private hhmm(time, fmt = "h:mm a")
 	def f = new java.text.SimpleDateFormat(fmt)
 	f.setTimeZone(location.timeZone ?: timeZone(time))
 	f.format(t)
+}
+
+
+/*
+	getDeviceActions
+
+	Returns a map of device actions to take when when the configured event occurs.
+*/
+private getDeviceActions(prefix = "devAction")
+{
+	Map deviceActions = [:]
+
+	if (settings."${prefix}_CamOn") deviceActions << [("cameraOn"): settings."${prefix}_CamOn"]
+	if (settings."${prefix}_CamOff") deviceActions << [("cameraOff"): settings."${prefix}_CamOff"]
+	if (settings."${prefix}_NightVisionOn") deviceActions << [("nightVisionOn"): settings."${prefix}_NightVisionOn"]
+	if (settings."${prefix}_NightVisionOff") deviceActions << [("nightVisionOff"): settings."${prefix}_NightVisionOff"]
+	if (settings."${prefix}_PowerSaveLow") deviceActions << [("powerSaveLow"): settings."${prefix}_PowerSaveLow"]
+	if (settings."${prefix}_PowerSaveOptimal") deviceActions << [("powerSaveOptimal"): settings."${prefix}_PowerSaveOptimal"]
+	if (settings."${prefix}_PowerSaveHigh") deviceActions << [("powerSaveHigh"): settings."${prefix}_PowerSaveHigh"]
+
+	return deviceActions
+}
+
+
+/*
+	checkConfigSet
+
+	Returns true if specific app configuration values are set based on keys beginning with [cfgPrefix] and optionally NOT ending with [cfgExcludeSuffix].
+*/
+private checkConfigSet(cfgPrefix, cfgExcludeSuffix=false)
+{
+	def cfgSet = false
+
+	for (String key : settings.keySet())
+	{
+		if (key.startsWith(cfgPrefix) && (cfgExcludeSuffix == false || !key.endsWith(cfgExcludeSuffix)))
+		{
+			cfgSet = true
+		}
+	}
+
+	return cfgSet
 }
 
 

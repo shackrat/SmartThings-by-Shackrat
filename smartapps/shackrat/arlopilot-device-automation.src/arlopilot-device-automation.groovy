@@ -39,6 +39,7 @@ preferences
 	page (name: "schedulePage", title: "Automation Execution Restrictions")
 	page (name: "generalSettings", title: "Automation General Settings")
 	page (name: "namePage", title: "Name Page")
+	page (name: "configureDeviceActions", title: "Configure Device Actions")
 }
 
 
@@ -164,7 +165,12 @@ def mainPage()
 				}
 			}
 
-			if (isArloSelected)
+			section("Device Properties")
+			{
+				href "configureDeviceActions", title: "Device Actions", description: "Change device properties like camera on/off and night vision control.", state: checkConfigSet("devAction") ? "complete" : null
+			}
+
+			if (isArloSelected || checkConfigSet("devAction"))
 			{
 				section("Options")
 				{
@@ -310,6 +316,60 @@ def generalSettings()
 
 
 /*
+	configureDeviceActions
+
+	UI Page: Configures a specific device for a specific SmartThings mode.
+*/
+def configureDeviceActions()
+{
+	def arloCameraCapableDevices = parent.arloDevices()
+	arloCameraCapableDevices.removeAll{it.deviceType == "basestation" || it.deviceType == "siren"}
+
+	Map arloCameras = [:]
+	arloCameraCapableDevices?.each {
+		arloCameras << [(it.deviceId): it.deviceName]
+	}
+
+	Map switchOnCameras = parent.deviceXORFilter(arloCameras, settings.devAction_CamOff)
+	Map switchOffCameras = parent.deviceXORFilter(arloCameras, settings.devAction_CamOn)
+	Map nightVisionOnCameras = parent.deviceXORFilter(arloCameras, settings.devAction_NightVisionOff)
+	Map nightVisionOffCameras = parent.deviceXORFilter(arloCameras, settings.devAction_NightVisionOn)
+
+	Map powerSaveLowCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveOptimal, settings.devAction_PowerSaveHigh)
+	Map powerSaveOptimalCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveLow, settings.devAction_PowerSaveHigh)
+	Map powerSaveHighCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveLow, settings.devAction_PowerSaveOptimal)
+
+	dynamicPage(name: "configureDeviceActions", title: "ArloPilot Device Actions", nextPage: "mainPage", install: false, uninstall: false)
+	{
+		section()
+		{
+			paragraph "ArloPilot Device Actions enable changing individual camera parameters when SmartThings mode changes occur."
+			if (automationEnabled != null && !automationEnabled)
+				paragraph title: "Automation Disabled!", required: true, "This automation has been disabled.  It can be enabled using the switch below."
+
+		}
+
+		section("Camera Control")
+		{
+			input "devAction_CamOn", "enum", title: "Enable Recording", description: "Disable privacy mode on these cameras...", options: switchOnCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_CamOff", "enum", title: "Disable Recording", description: "Enable privacy mode on these cameras...", options: switchOffCameras, multiple: true, required: false, submitOnChange: true
+		}
+		section("Night Vision Control")
+		{
+			input "devAction_NightVisionOn", "enum", title: "Enable Night Vision", description: "Enable night vision on these cameras...", options: nightVisionOnCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_NightVisionOff", "enum", title: "Disable Night Vision", description: "Disable night vision on these cameras...", options: nightVisionOffCameras, multiple: true, required: false, submitOnChange: true
+		}
+		section("Power Saver Control")
+		{
+			input "devAction_PowerSaveLow", "enum", title: "Best Video", description: "Set these cameras to the highest video quality...", options: powerSaveLowCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_PowerSaveOptimal", "enum", title: "Optimal", description: "Set these cameras an optimal balance of video quality and battery life...", options: powerSaveOptimalCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_PowerSaveHigh", "enum", title: "Best Battery Life", description: "Set these cameras to optimize battery life...", options: powerSaveHighCameras, multiple: true, required: false, submitOnChange: true
+		}
+	}
+}
+
+
+/*
 	getIsArloSelected
 
 	Returns true if any Arlo cameras are selected in preferences
@@ -422,6 +482,8 @@ def presenceDepartEvent(evt)
 */
 private doArloModeChange()
 {
+	Map devActions = deviceActions
+
 	if (executionAllowed)
 	{
 		// Change the Arlo mode, if automations not diabled
@@ -438,7 +500,22 @@ private doArloModeChange()
 			// Notifications
 			if (settings.notifySendPush)
 			{
-				sendPush(settings.notifyCustomText ? settings.notifyCustomText : "${app.label} has ${result ? "completed" : "FAILED!"} .")				}
+				sendPush(settings.notifyCustomText ? settings.notifyCustomText : "${app.label} has ${result ? "completed" : "FAILED!"} .")
+			}
+
+			// Process device actions
+			if (devActions.size())
+			{
+				logTrace "doArloModeChange: Processing device actions for event - ${evt.value}..."
+				deviceActions.each
+				{propCmd, deviceIdList ->
+					deviceIdList?.each
+					{
+						"${propCmd}"(it)
+						pause(500)
+					}
+				}
+			}
 		}
 		else logWarn "Device Event Automations are Disabled!"
 	}
@@ -470,25 +547,29 @@ private getAppLabel()
 	}
 	def arloBases = arloDevices.join(", ")
 
+	if (arloBases != "" && checkConfigSet("devAction")) arloBases += " mode and camera properties"
+	else if (arloBases == "") arloBases = "camera properties"
+	else arloBases += " mode"
+ 
 	if (settings.stSwitchOn)
 	{
-		return "Change ${arloBases} mode when ${settings.stSwitchOn} turns on."
+		return "Change ${arloBases} when ${settings.stSwitchOn} turns on."
 	}
 	else if (settings.stSwitchOff)
 	{
-		return "Change ${arloBases} mode when ${settings.stSwitchOn} turns off."
+		return "Change ${arloBases} when ${settings.stSwitchOn} turns off."
 	}
 	else if (settings.stPresenceArrive)
 	{
-		return "Change ${arloBases} mode when someone arrives."
+		return "Change ${arloBases} when someone arrives."
 	}
 	else if (settings.stPresenceDepart)
 	{
-		return "Change ${arloBases} mode when everyone leaves."
+		return "Change ${arloBases} when everyone leaves."
 	}
 	else if (settings.pushButton)
 	{
-		return "Change ${arloBases} mode when ${settings.pushButton} is pressed."
+		return "Change ${arloBases} when ${settings.pushButton} is pressed."
 	}
 	return ""
 }
@@ -635,6 +716,27 @@ private hhmm(time, fmt = "h:mm a")
 	def f = new java.text.SimpleDateFormat(fmt)
 	f.setTimeZone(location.timeZone ?: timeZone(time))
 	f.format(t)
+}
+
+
+/*
+	checkConfigSet
+
+	Returns true if specific app configuration values are set based on keys beginning with [cfgPrefix] and optionally NOT ending with [cfgExcludeSuffix].
+*/
+private checkConfigSet(cfgPrefix, cfgExcludeSuffix=false)
+{
+	def cfgSet = false
+
+	for (String key : settings.keySet())
+	{
+		if (key.startsWith(cfgPrefix) && (cfgExcludeSuffix == false || !key.endsWith(cfgExcludeSuffix)))
+		{
+			cfgSet = true
+		}
+	}
+
+	return cfgSet
 }
 
 

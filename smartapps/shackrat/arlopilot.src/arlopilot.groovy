@@ -47,6 +47,8 @@ preferences
 	page (name: "generalSettings", title: "ArloPilot General Settings")
 	page (name: "about", title: "About ArloPilot")
 	page (name: "deviceAutomationManagement", title: "Arlo Device Automation Management")
+	page (name: "configureSHMDeviceActions", title: "Configure Arlo Device Actions for SHM")
+	page (name: "cameraPage", title: "Show Available Cameras")
 }
 
 
@@ -151,7 +153,10 @@ def mainPage()
 			{
 				href "manageArloDevices", title: "Manage Arlo Devices & Modes", description: "Connect Arlo devices and manage user-defined Arlo modes.", state: state.selectedDevices.size() ? "complete" : null
 				if (state.selectedDevices.size() > 0)
-					href "changeArloModeList", title: "Change Arlo Mode", description: "Manually set the Arlo mode on a device.", state: state.selectedDevices.size() ? "complete" : null
+				{
+					href "cameraPage", title: "Arlo Cameras", description: "Show discovered Arlo cameras."
+					href "changeArloModeList", title: "Change Arlo Mode", description: "Manually set the Arlo mode on a device."
+				}
 			}
 
 			if (state.selectedDevices.size() > 0)
@@ -163,7 +168,7 @@ def mainPage()
 				}
 				section("Mode Automation Management (" + (state.modeAutomations > 0 ? state.modeAutomations : "Not") + " Configured)")
 				{
-					if (settings.enableModes == null || settings.enableModes) href "modeManagement", title: "Synchronize Arlo Modes", description: "Configure SmartThings modes to change Arlo modes.", state: state.modeAutomations ? "complete" : null
+					if (settings.enableModes == null || settings.enableModes) href "modeManagement", title: "Synchronize Modes", description: "Configure SmartThings modes to change Arlo modes.", state: state.modeAutomations ? "complete" : null
 					else paragraph "SmartThings mode event integration is disabled."
 				}
 				section("Device Automation Management (" + (state.deviceAutomations > 0 ? state.deviceAutomations : "Not") + " Configured)")
@@ -519,9 +524,14 @@ def configureSHMMapping()
 				}
 				if (shmStayDevices)
 				{
-					input name: "SHMArmStay_notifySendPush", title: "Send a push notification confirming this action?", type: "bool", required: false
+					input name: "SHMArmStay_notifySendPush", title: "Send a push notification confirming these action?", type: "bool", required: false
 				}
 			}
+			section()
+			{
+				href "configureSHMDeviceActions", title: "Device Control - Armed/Stay", description: "Change device properties like camera on/off and night vision control.", params: [shmMode: "stay"], state: isSHMStayConfigured ? "complete" : null
+			}
+
 			section("SHM Armed - Away")
 			{
 				arloModeCapableDevices.each
@@ -538,6 +548,11 @@ def configureSHMMapping()
 					input name: "SHMArmAway_notifySendPush", title: "Send a push notification confirming this action?", type: "bool", required: false
 				}
 			}
+			section()
+			{
+				href "configureSHMDeviceActions", title: "Device Control - Armed/Away", description: "Change device properties like camera on/off and night vision control.", params: [shmMode: "away"], state: isSHMAwayConfigured ? "complete" : null
+			}
+
 			section("SHM Disarmed")
 			{
 				arloModeCapableDevices.each
@@ -554,9 +569,161 @@ def configureSHMMapping()
 					input name: "SHMArmOff_notifySendPush", title: "Send a push notification confirming this action?", type: "bool", required: false
 				}
 			}
+			section()
+			{
+				href "configureSHMDeviceActions", title: "Device Control - Disarmed", description: "Change device properties like camera on/off and night vision control.", params: [shmMode: "off"], state: isSHMOffConfigured ? "complete" : null
+			}
 		}
 	}
 }
+
+
+/*
+	configureSHMDevice
+
+	UI Page: Configures a specific device for a specific SHM mode.
+*/
+def configureSHMDeviceActions(params)
+{
+	def arloCameraCapableDevices = arloDevices("camera") + arloDevices("arloq")
+	if (params.shmMode) state.configureSHMDevice_shmMode = params.shmMode.capitalize()
+
+	Map arloCameras = [:]
+	arloCameraCapableDevices?.each {
+		arloCameras << [(it.deviceId): it.deviceName]
+	}
+
+	Map switchOnCameras = deviceXORFilter(arloCameras, settings."SHMArm${state.configureSHMDevice_shmMode}_CamOff")
+	Map switchOffCameras = deviceXORFilter(arloCameras, settings."SHMArm${state.configureSHMDevice_shmMode}_CamOn")
+	Map nightVisionOnCameras = deviceXORFilter(arloCameras, settings."SHMArm${state.configureSHMDevice_shmMode}_NightVisionOff")
+	Map nightVisionOffCameras = deviceXORFilter(arloCameras, settings."SHMArm${state.configureSHMDevice_shmMode}_NightVisionOn")
+
+	Map powerSaveLowCameras = deviceXORFilter(arloCameras, settings."SHMArm${state.configureSHMDevice_shmMode}_PowerSaveOptimal", settings."SHMArm${state.configureSHMDevice_shmMode}_PowerSaveHigh")
+	Map powerSaveOptimalCameras = deviceXORFilter(arloCameras, settings."SHMArm${state.configureSHMDevice_shmMode}_PowerSaveLow", settings."SHMArm${state.configureSHMDevice_shmMode}_PowerSaveHigh")
+	Map powerSaveHighCameras = deviceXORFilter(arloCameras, settings."SHMArm${state.configureSHMDevice_shmMode}_PowerSaveLow", settings."SHMArm${state.configureSHMDevice_shmMode}_PowerSaveOptimal")
+
+	dynamicPage(name: "configureSHMDeviceActions", title: "ArloPilot Smart Home Monitor Alarm Configuration - ${state.configureSHMDevice_shmMode} Device Actions", nextPage: "configureSHMMapping", install: false, uninstall: false)
+	{
+		section()
+		{
+			if (settings.enableSHM == null || settings.enableSHM)
+				paragraph "Using this page you can configure specific device properties when Smart Home Monitor alarm state changes to ${state.configureSHMDevice_shmMode}."
+			else
+				paragraph "Smart Home Monitor features are currently disabled in ArloPilot settings!", required: true
+		}
+
+		section("Camera Control")
+		{
+			input "SHMArm${state.configureSHMDevice_shmMode}_CamOn", "enum", title: "Enable Recording", description: "Disable privacy mode on these cameras...", options: switchOnCameras, multiple: true, required: false, submitOnChange: true
+			input "SHMArm${state.configureSHMDevice_shmMode}_CamOff", "enum", title: "Disable Recording", description: "Enable privacy mode on these cameras...", options: switchOffCameras, multiple: true, required: false, submitOnChange: true
+		}
+		section("Night Vision Control")
+		{
+			input "SHMArm${state.configureSHMDevice_shmMode}_NightVisionOn", "enum", title: "Enable Night Vision", description: "Enable night vision on these cameras...", options: nightVisionOnCameras, multiple: true, required: false, submitOnChange: true
+			input "SHMArm${state.configureSHMDevice_shmMode}_NightVisionOff", "enum", title: "Disable Night Vision", description: "Disable night vision on these cameras...", options: nightVisionOffCameras, multiple: true, required: false, submitOnChange: true
+		}
+		section("Power Saver Control")
+		{
+			input "SHMArm${state.configureSHMDevice_shmMode}_PowerSaveLow", "enum", title: "Best Video", description: "Set these cameras to the highest video quality...", options: powerSaveLowCameras, multiple: true, required: false, submitOnChange: true
+			input "SHMArm${state.configureSHMDevice_shmMode}_PowerSaveOptimal", "enum", title: "Optimal", description: "Set these cameras an optimal balance of video quality and battery life...", options: powerSaveOptimalCameras, multiple: true, required: false, submitOnChange: true
+			input "SHMArm${state.configureSHMDevice_shmMode}_PowerSaveHigh", "enum", title: "Best Battery Life", description: "Set these cameras to optimize battery life...", options: powerSaveHighCameras, multiple: true, required: false, submitOnChange: true
+		}
+	}
+}
+
+
+/*
+	cameraPage
+
+	UI Page: Displays a list of the available cameras with last captured image.
+*/
+def cameraPage()
+{
+	def arloCameraDevices = arloDevices("camera")
+	def arloQCameraDevices = arloDevices("arloq")
+	def arloBase
+
+	dynamicPage(name: "cameraPage", title: "ArloPilot - Discovered Cameras", nextPage: "mainPage", install: false, uninstall: false)
+	{
+		section()
+		{
+			if (arloCameraDevices?.size() || arloQCameraDevices?.size())
+				paragraph "Using this page you can view the available Arlo cameras.\n\nNote: Images may not be available for all cameras.\n\nTap any camera to view the latest image."
+			else
+				paragraph "No Arlo cameras could be found!", required: true
+		}
+
+		section("Arlo Pro / Pro 2 Cameras")
+		{
+			arloCameraDevices.each
+			{
+				arloBase = getArloDevice(it.parentId)
+				href title: it.deviceName, description: "${arloBase?.deviceName}", image: it.presignedLastImageUrl, url: it.presignedLastImageUrl
+			}
+		}
+		section("Arlo-Q / Arlo-Q2 Cameras")
+		{
+			arloQCameraDevices.each
+			{
+				href title: it.deviceName, image: it.presignedLastImageUrl, url: it.presignedLastImageUrl
+			}
+		}
+	}
+}
+
+/*
+	configureDeviceActions
+
+	UI Page: Configures a specific device for a specific SmartThings mode.
+*/
+def configureDeviceActions()
+{
+	def arloCameraCapableDevices = parent.arloDevices()
+	arloCameraCapableDevices.removeAll{it.deviceType == "basestation" || it.deviceType == "siren"}
+
+	Map arloCameras = [:]
+	arloCameraCapableDevices?.each {
+		arloCameras << [(it.deviceId): it.deviceName]
+	}
+
+	Map switchOnCameras = parent.deviceXORFilter(arloCameras, settings.devAction_CamOff)
+	Map switchOffCameras = parent.deviceXORFilter(arloCameras, settings.devAction_CamOn)
+	Map nightVisionOnCameras = parent.deviceXORFilter(arloCameras, settings.devAction_NightVisionOff)
+	Map nightVisionOffCameras = parent.deviceXORFilter(arloCameras, settings.devAction_NightVisionOn)
+
+	Map powerSaveLowCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveOptimal, settings.devAction_PowerSaveHigh)
+	Map powerSaveOptimalCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveLow, settings.devAction_PowerSaveHigh)
+	Map powerSaveHighCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveLow, settings.devAction_PowerSaveOptimal)
+
+	dynamicPage(name: "configureDeviceActions", title: "ArloPilot Device Actions", nextPage: "mainPage", install: false, uninstall: false)
+	{
+		section()
+		{
+			paragraph "ArloPilot Device Actions enable changing individual camera parameters when SmartThings mode changes occur."
+			if (!automationEnabled && (app.label != null && app.label != app.name))
+				paragraph title: "Automation Disabled!", required: true, "This automation has been disabled.  It can be enabled using the switch below."
+
+		}
+
+		section("Camera Control")
+		{
+			input "devAction_CamOn", "enum", title: "Enable Recording", description: "Disable privacy mode on these cameras...", options: switchOnCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_CamOff", "enum", title: "Disable Recording", description: "Enable privacy mode on these cameras...", options: switchOffCameras, multiple: true, required: false, submitOnChange: true
+		}
+		section("Night Vision Control")
+		{
+			input "devAction_NightVisionOn", "enum", title: "Enable Night Vision", description: "Enable night vision on these cameras...", options: nightVisionOnCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_NightVisionOff", "enum", title: "Disable Night Vision", description: "Disable night vision on these cameras...", options: nightVisionOffCameras, multiple: true, required: false, submitOnChange: true
+		}
+		section("Power Saver Control")
+		{
+			input "devAction_PowerSaveLow", "enum", title: "Best Video", description: "Set these cameras to the highest video quality...", options: powerSaveLowCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_PowerSaveOptimal", "enum", title: "Optimal", description: "Set these cameras an optimal balance of video quality and battery life...", options: powerSaveOptimalCameras, multiple: true, required: false, submitOnChange: true
+			input "devAction_PowerSaveHigh", "enum", title: "Best Battery Life", description: "Set these cameras to optimize battery life...", options: powerSaveHighCameras, multiple: true, required: false, submitOnChange: true
+		}
+	}
+}
+
 
 
 /*
@@ -596,6 +763,7 @@ def about()
 def SHMStateHandler(evt)
 {
 	Map arloDevices = [:]
+	Map deviceActions = [:]
 	def notifyPush = false
 
 	if (settings.enableSHM != null && !settings.enableSHM)
@@ -610,14 +778,17 @@ def SHMStateHandler(evt)
 	{
 		case "away":
 			arloDevices = shmAwayDevices
+			deviceActions = shmAwayDeviceActions
 			notifyPush = settings.SHMArmAway_notifySendPush
 			break
 		case "stay":
 			arloDevices = shmStayDevices
+			deviceActions = shmStayDeviceActions
 			notifyPush = settings.SHMArmStay_notifySendPush
 			break
 		case "off":
 			arloDevices = shmOffDevices
+			deviceActions = shmOffDeviceActions
 			notifyPush = settings.SHMArmOff_notifySendPush
 			break
 		default:
@@ -625,19 +796,35 @@ def SHMStateHandler(evt)
 			break
 	}
 
-	logDebug "SHMStateHandler: Devices for ${evt.value} ${arloDevices}"
+	logDebug "SHMStateHandler: Devices for ${evt.value} = ${arloDevices}"
 
 	def result = true
 	arloDevices.each
 	{deviceId, modeId ->
 		if (!setArloMode(deviceId, modeId)) result = false
-		pause(1000)
+		pause(500)
 	}
 
 	if (notifyPush)
 	{
 		sendPush("Arlo SHM changed to \"${evt.value}\"; ${result ? "all Arlo mode(s) changed." : "one or more Arlo modes failed to change!"} .")
 	}
+
+
+	// Process device actions
+	if (deviceActions.size())
+	{
+		logTrace "SHMStateHandler: Processing device actions for SHM event - ${evt.value}..."
+		deviceActions.each
+		{propCmd, deviceIdList ->
+			deviceIdList?.each
+			{
+				"${propCmd}"(it)
+				pause(500)
+			}
+		}
+	}
+
 }
 
 
@@ -725,6 +912,7 @@ private Map arloLogin(useCache = true)
 	// Cache logins for 5 minutes   
 	state.arloSession = mapAuth
 	state.arloSessionTS = now()
+	state.arloDeviceCacheTS = 0
 	return mapAuth
 }
 
@@ -734,65 +922,61 @@ private Map arloLogin(useCache = true)
 
 	Returns a list of arlo devices for an optional device type either from the cloud (or cache).
 */
-List arloDevices(filterDeviceType = "")
+List arloDevices(filterDeviceType = "", parentDeviceId = "")
 {
 	def arloCloudDevices = []
 
 	// Cached device list valid?
-	if (state.arloDevices?.size() > 0 && state.arloSessionTS > 0 && (state.arloSessionTS > now() - 300000)) 
+	if (state.arloDevices?.size() == 0 || state.arloSessionTS == 0 || (state.arloDeviceCacheTS + 300000) < now()) 
 	{
-		if (filterDeviceType == "")
+		logTrace "arloDevices: Requesting updated device list from the Arlo cloud..."
+
+		try
 		{
-			arloCloudDevices = state.arloDevices
-		}
-		else
-		{
-			arloCloudDevices = state.arloDevices.findAll {it.deviceType == filterDeviceType}
-		}
-
-		logTrace "arloDevices: Using cached device list: ${arloCloudDevices}."
-		return  arloCloudDevices
-	}
-
-	try
-	{
-		httpGet(
-			[
-				uri:		"https://arlo.netgear.com",
-				path:		"/hmsweb/users/devices",
-				tlsVersion: "TLSv1.2",
-				headers: 	arloLogin()
-			]
-		){jsonResponse ->
- 			if (jsonResponse.data.success == true)
-			{
-				// Cache devices for 5 minutes   
-				state.arloDevices = jsonResponse.data.data
-				state.arloSessionTS = now()
-
-				if (filterDeviceType == "")
+			httpGet(
+				[
+					uri:		"https://arlo.netgear.com",
+					path:		"/hmsweb/users/devices",
+					tlsVersion: "TLSv1.2",
+					headers: 	arloLogin()
+				]
+			){jsonResponse ->
+ 				if (jsonResponse.data.success == true)
 				{
-					arloCloudDevices = jsonResponse.data.data
+					// Cache devices for 5 minutes   
+					state.arloDevices = jsonResponse.data.data
+					state.arloSessionTS = now()
+					state.arloDeviceCacheTS = now()
 				}
 				else
 				{
-					arloCloudDevices = jsonResponse.data.data.findAll {it.deviceType == filterDeviceType}
+					// Cache devices for 5 minutes   
+					state.arloDevices = []
+					state.arloSessionTS = 0
+
+					logError "Failed to retrieve device list from the Arlo cloud.  The response received was: ${jsonResponse.data}."
+					return false
 				}
 			}
-			else
-			{
-				// Cache devices for 5 minutes   
-				state.arloDevices = []
-				state.arloSessionTS = 0
-
-				logError "Failed to retrieve device list from the Arlo cloud.  The response received was: ${jsonResponse.data}."
-				return false
-			}
+		}
+		catch (errorException)
+		{
+			logError "Caught exception [${errorException}] while attempting to retreive the device list."
 		}
 	}
-	catch (errorException)
+	else logTrace "arloDevices: Using cached device list..."
+
+
+
+	if (filterDeviceType == "")
 	{
-		logError "Caught exception [${errorException}] while attempting to retreive the device list."
+		if (parentDeviceId == "") arloCloudDevices = state.arloDevices.findAll {it.displayOrder > 0}
+		else arloCloudDevices = state.arloDevices.findAll {it?.parentId == parentDeviceId && it.displayOrder > 0}
+	}
+	else
+	{
+		if (parentDeviceId == "") arloCloudDevices = state.arloDevices.findAll {it.deviceType == filterDeviceType && it.displayOrder > 0}
+		else arloCloudDevices = state.arloDevices.findAll {it.deviceType == filterDeviceType && it.parentId == parentDeviceId && it.displayOrder > 0}
 	}
 
 	logTrace "Devices returned [${arloCloudDevices}]."
@@ -857,6 +1041,150 @@ def setArloMode(deviceId, modeId)
 	}
 
 	return true
+}
+
+
+/*
+	setArloDeviceProperty
+
+	Sets the a [deviceProperty] on Arlo [deviceId] to [propertyValue] on an Arlo device.
+*/
+def setArloDeviceProperty(deviceId, deviceProperty, propertyValue)
+{
+	// Get device details
+	def arloDevice = getArloDevice(deviceId)
+	def arloBase = getArloDevice(arloDevice?.parentId)
+	if (!arloDevice || !arloBase)
+	{
+		logError "setArloDeviceProperty: Unable to locate the requested Arlo device (deviceId) or parent (${arloDevice?.parentId})."
+		return false
+	}
+
+	logDebug "setArloDeviceProperty: Attempting to set \"${deviceProperty}\" on ${arloDevice.deviceName} (${arloBase.deviceName}) to ${propertyValue}..."
+
+	// Attempt to create an Arlo session
+	try
+	{
+		httpPostJson(
+			[
+				uri:  		"https://arlo.netgear.com",
+				path:		"/hmsweb/users/devices/notify/${arloBase.deviceId}",
+				tlsVersion: "TLSv1.2",
+				headers: [
+					xcloudId: arloBase.xCloudId
+				] + arloLogin(),
+				body: 
+				[
+					action:				"set",
+					from:				"ArloPilot",
+					properties: [
+						(deviceProperty):		propertyValue
+					],
+					publishResponse:	true,
+					resource:			"cameras/" + arloDevice.deviceId,
+					transId:			""
+				]
+
+			]
+		)
+		{jsonResponse ->
+			if (jsonResponse.data.success == true)
+			{
+				logTrace "Arlo property \"${deviceProperty}\" for ${arloDevice.deviceName} changed to ${propertyValue}."
+			}
+			else
+			{
+				logError "Failed to set property \"${deviceProperty}\" for ${arloDevice.deviceName} to ${propertyValue}.  The response received was: ${objResponse.data}."
+				return false
+ 			}
+		}
+	}
+	catch (errorException)
+	{
+		logError "Caught exception [${errorException}] while attempting to set device property."
+	}
+
+	return true
+}
+
+
+/*
+	cameraOn
+
+	Turns on the [deviceId] camera by setting the privacyActive property to false.
+*/
+def cameraOn(deviceId)
+{
+	return setArloDeviceProperty(deviceId, "privacyActive", false)
+}
+
+
+/*
+	cameraOff
+
+	Turns off the [deviceId] camera by setting the privacyActive property to true.
+*/
+def cameraOff(deviceId)
+{
+	return setArloDeviceProperty(deviceId, "privacyActive", true)
+}
+
+
+/*
+	nightVisionOn
+
+	Turns on [deviceId] cameras night vision by setting the nightVisionMode property to 1.
+*/
+def nightVisionOn(deviceId)
+{
+	return setArloDeviceProperty(deviceId, "nightVisionMode", 1)
+}
+
+
+/*
+	nightVisionOff
+
+	Turns off [deviceId] cameras night vision by setting the nightVisionMode property to 0.
+*/
+def nightVisionOff(deviceId)
+{
+	return setArloDeviceProperty(deviceId, "nightVisionMode", 2)
+}
+
+
+/*
+	powerSaveLow
+
+	Sets [deviceId] cameras power saver to the lowest setting.  (Best Video)
+
+*/
+def powerSaveLow(deviceId)
+{
+	return setArloDeviceProperty(deviceId, "powerSaveMode", 3)
+}
+
+
+/*
+	powerSaveOptimal
+
+	Sets [deviceId] cameras power saver to the optimized setting.  (Balanced battery life vs video quality)
+
+*/
+def powerSaveOptimal(deviceId)
+{
+	return setArloDeviceProperty(deviceId, "powerSaveMode", 2)
+}
+
+
+/*
+	powerSaveHigh
+
+	Sets [deviceId] cameras power saver to the highest setting.  (Best Battery Life)
+
+*/
+def powerSaveHigh(deviceId)
+{
+	return setArloDeviceProperty(deviceId, "powerSaveMode", 1)
 }
 
 
@@ -939,13 +1267,61 @@ private getArloDevice(deviceId)
 */
 private getIsSHMConnected()
 {
-	def SHMActive = false
-	state.selectedDevices.each
-	{deviceId->
-		if ( settings."SHMArmOff_${deviceId}"?.size() || settings."SHMArmAway_${deviceId}"?.size() || settings."SHMArmStay_${deviceId}"?.size() ) SHMActive = true
+	return checkConfigSet("SHMArm", "notifySendPush")
+}
+
+
+/*
+	getIsSHMAwayConfigured
+
+	Returns true if Smart Home Monitor alarm state (Away) device actions are configured.
+*/
+private getIsSHMAwayConfigured()
+{
+	return checkConfigSet("SHMArmAway", "notifySendPush")
+}
+
+
+/*
+	getIsSHMStayConfigured
+
+	Returns true if Smart Home Monitor alarm state (Stay) device actions are configured.
+*/
+private getIsSHMStayConfigured()
+{
+	return checkConfigSet("SHMArmStay", "notifySendPush")
+}
+
+
+/*
+	getIsSHMOffConfigured
+
+	Returns true if Smart Home Monitor alarm state (Off) device actions are configured.
+*/
+private getIsSHMOffConfigured()
+{
+	return checkConfigSet("SHMArmOff", "notifySendPush")
+}
+
+
+/*
+	checkConfigSet
+
+	Returns true if specific app configuration values are set based on keys beginning with [cfgPrefix] and optionally NOT ending with [cfgExcludeSuffix].
+*/
+private checkConfigSet(cfgPrefix, cfgExcludeSuffix=false)
+{
+	def cfgSet = false
+
+	for (String key : settings.keySet())
+	{
+		if (key.startsWith(cfgPrefix) && (cfgExcludeSuffix == false || !key.endsWith(cfgExcludeSuffix)))
+		{
+			cfgSet = true
+		}
 	}
 
-	return SHMActive
+	return cfgSet
 }
 
 
@@ -1023,6 +1399,75 @@ Map getShmAwayDevices()
 
 
 /*
+	getShmOffDeviceActions
+
+	Returns a map of device actions that should be triggered when SHM is set to disarmed.
+*/
+Map getShmOffDeviceActions()
+{
+	return getShmDeviceActions("Off")
+}
+
+
+/*
+	getShmStayDeviceActions
+
+	Returns a map of device actions that should be triggered when SHM is set to Arm (stay).
+*/
+Map getShmStayDeviceActions()
+{
+	return getShmDeviceActions("Stay")
+}
+
+
+/*
+	getShmAwayDeviceActions
+
+	Returns a map of device actions that should be triggered when SHM is set to Arm (away).
+*/
+Map getShmAwayDeviceActions()
+{
+	return getShmDeviceActions("Away")
+}
+
+
+/*
+	getShmDeviceActions
+
+	Returns a map of device actions to take when SHM is set to disarmed.
+*/
+private getShmDeviceActions(shmMode)
+{
+	Map deviceActions = [:]
+
+	if (settings."SHMArm${shmMode}_CamOn") deviceActions << [("cameraOn"): settings."SHMArm${shmMode}_CamOn"]
+	if (settings."SHMArm${shmMode}_CamOff") deviceActions << [("cameraOff"): settings."SHMArm${shmMode}_CamOff"]
+	if (settings."SHMArm${shmMode}_NightVisionOn") deviceActions << [("nightVisionOn"): settings."SHMArm${shmMode}_NightVisionOn"]
+	if (settings."SHMArm${shmMode}_NightVisionOff") deviceActions << [("nightVisionOff"): settings."SHMArm${shmMode}_NightVisionOff"]
+	if (settings."SHMArm${shmMode}_PowerSaveLow") deviceActions << [("powerSaveLow"): settings."SHMArm${shmMode}_PowerSaveLow"]
+	if (settings."SHMArm${shmMode}_PowerSaveOptimal") deviceActions << [("powerSaveOptimal"): settings."SHMArm${shmMode}_PowerSaveOptimal"]
+	if (settings."SHMArm${shmMode}_PowerSaveHigh") deviceActions << [("powerSaveHigh"): settings."SHMArm${shmMode}_PowerSaveHigh"]
+
+	return deviceActions
+}
+
+
+/*
+	deviceXORFilter
+
+	Helper function to filter the list of camera devices.
+*/
+Map deviceXORFilter(deviceList, filterList, filterList2 = null)
+{
+	Map copyMap = [:]
+	copyMap.putAll(deviceList)
+	if (filterList) copyMap.keySet().removeAll(filterList)
+	if (filterList2 != null) copyMap.keySet().removeAll(filterList2)
+	return copyMap
+}
+
+
+/*
 	logDebug
 
 	Displays debug output to IDE logs based on user preference.
@@ -1082,7 +1527,7 @@ private logError(msgOut)
 	log.error msgOut
 }
 
-private getAppVersion(){1.2}
+private getAppVersion(){1.3}
 
 private getVersionCheck()
 {
