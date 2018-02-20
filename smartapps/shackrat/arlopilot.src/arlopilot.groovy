@@ -529,7 +529,7 @@ def configureSHMMapping()
 			}
 			section()
 			{
-				href "configureSHMDeviceActions", title: "Device Control - Armed/Stay", description: "Change device properties like camera on/off and night vision control.", params: [shmMode: "stay"], state: isSHMStayConfigured ? "complete" : null
+				href "configureSHMDeviceActions", title: "Camera Settings - Armed/Stay", description: "Change device properties like camera on/off and night vision control.", params: [shmMode: "stay"], state: isSHMStayConfigured ? "complete" : null
 			}
 
 			section("SHM Armed - Away")
@@ -550,7 +550,7 @@ def configureSHMMapping()
 			}
 			section()
 			{
-				href "configureSHMDeviceActions", title: "Device Control - Armed/Away", description: "Change device properties like camera on/off and night vision control.", params: [shmMode: "away"], state: isSHMAwayConfigured ? "complete" : null
+				href "configureSHMDeviceActions", title: "Camera Settings - Armed/Away", description: "Change device properties like camera on/off and night vision control.", params: [shmMode: "away"], state: isSHMAwayConfigured ? "complete" : null
 			}
 
 			section("SHM Disarmed")
@@ -571,7 +571,7 @@ def configureSHMMapping()
 			}
 			section()
 			{
-				href "configureSHMDeviceActions", title: "Device Control - Disarmed", description: "Change device properties like camera on/off and night vision control.", params: [shmMode: "off"], state: isSHMOffConfigured ? "complete" : null
+				href "configureSHMDeviceActions", title: "Camera Settings - Disarmed", description: "Change device properties like camera on/off and night vision control.", params: [shmMode: "off"], state: isSHMOffConfigured ? "complete" : null
 			}
 		}
 	}

@@ -167,7 +167,7 @@ def mainPage()
 
 			section("Device Properties")
 			{
-				href "configureDeviceActions", title: "Device Actions", description: "Change device properties like camera on/off and night vision control.", state: checkConfigSet("devAction") ? "complete" : null
+				href "configureDeviceActions", title: "Change these camera settings...", description: "Change device properties like camera on/off and night vision control.", state: checkConfigSet("devAction") ? "complete" : null
 			}
 
 			if (isArloSelected || checkConfigSet("devAction"))
