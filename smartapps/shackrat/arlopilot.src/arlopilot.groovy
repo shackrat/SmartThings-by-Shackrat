@@ -32,6 +32,7 @@ definition(
 	iconX3Url: "https://storage.googleapis.com/arlopilot/arlo-large.png"
 )
 
+
 preferences
 {
 	page (name: "mainPage", title: "ArloPilot")
@@ -49,6 +50,26 @@ preferences
 	page (name: "deviceAutomationManagement", title: "Arlo Device Automation Management")
 	page (name: "configureSHMDeviceActions", title: "Configure Arlo Device Actions for SHM")
 	page (name: "cameraPage", title: "Show Available Cameras")
+
+	// 1.4 External Features
+	page (name: "externalAccess", title: "Configure External Access")
+	page (name: "virtualCameraTiles", title: "Configure Virtual Camera Tiles")
+	page (name: "confirmTokenReset", title: "Reset oAuth Security Token")
+	page (name: "resetSecurityToken", title: "Security Token Action")
+	page (name: "cameraEndpointDetails", title: "External Camera Access Details")
+}
+
+
+/*
+	mappings
+
+	Maps enpoint URI's to ArloPilot functions.
+
+	Added: v1.4
+*/
+mappings
+{
+	path("/latestimage/:deviceid") {action: [GET: "getLatestStill"]}
 }
 
 
@@ -62,6 +83,7 @@ def installed()
 	logInfo "ArloPilot Installed"
 
 	state.installed = true
+
  	initialize()
 }
 
@@ -83,6 +105,8 @@ def updated()
 	initialize
 
 	Creates SHM event subscription if configured.
+
+	Updated: v1.4
 */
 def initialize()
 {
@@ -94,6 +118,45 @@ def initialize()
 		logDebug "   ... automation: ${child.label}"
 		if (child.name == "ArloPilot Mode Automation") state.modeAutomations = state.modeAutomations + 1
 		if (child.name == "ArloPilot Device Automation") state.deviceAutomations = state.deviceAutomations + 1
+	}
+
+	childDevicess.each {child ->
+		log.debug "   ... virtual device: ${child.label}"
+	}
+
+	// 1.4 Remove dead virtual devices
+	getChildDevices()?.each
+	{childDevice ->
+		if (settings.virtualCameraTiles.find{"ArloPilot_${it}" == childDevice.deviceNetworkId})
+		{
+			logTrace "initialize: Found active device: ${childDevice.label}."
+		}
+		else
+		{
+			logTrace "initialize: Removing unused device: ${childDevice.label}."
+			deleteChildDevice(childDevice.deviceNetworkId)
+		}
+	}
+
+	// 1.4 Create virtual camera tile devices
+	settings.virtualCameraTiles.each
+	{deviceId->
+		if (!getChildDevices()?.find{it.deviceNetworkId == "ArloPilot_${deviceId}"})
+		{
+			def arloCamera = getArloDevice(deviceId)
+			if (arloCamera)
+			{
+				logDebug "initialize: Creating virtual camera device for ${arloCamera.deviceName}."
+				addChildDevice("shackrat", "arloPilotCameraTile", "ArloPilot_${deviceId}", location.hubs[0].id, [
+					"name": "${arloCamera.deviceName} - ArloPilot",
+					"label": "${arloCamera.deviceName} - ArloPilot",
+					"completedSetup": true, 
+					"data": [
+						"arloDeviceId": deviceId
+				]])
+			}
+			else logError "initialize: Could not create virtual camera tile; unabel to find Arlo camera with ID: ${deviceId}."
+		}
 	}
 
 	// Subscribe to SHM events
@@ -182,7 +245,7 @@ def mainPage()
 
 		section()
 		{
-			href "generalSettings", title: "ArloPilot Settings", description: "Configure debug and trace logging..."
+			href "generalSettings", title: "ArloPilot Settings", description: "Configure external access, camera tiles, debug and trace logging..."
 			href "about", title: "Like ArloPilot?", description: "Support the project...  Consider making a small contribution today!"
 		}
 	}
@@ -198,6 +261,12 @@ def generalSettings()
 {
 	dynamicPage(name: "generalSettings", title: "ArloPilot Settings", uninstall: false, install: false)
 	{
+		section()
+		{
+			if (getActiveArloCameras()?.size()) href "virtualCameraTiles", title: "Create Virtual Camera Tiles", description: "Create virtual devices to allow viewing of latest Arlo still images.", state: settings.virtualCameraTiles ? "complete" : null
+			href "externalAccess", title: "Configure External Access", description: "Enable web access to specific ArloPilot features like still images.", state: isEndpointEnabled ? "complete" : null
+		}
+
 		section("Feature Control")
 		{
 			paragraph "Use these \"Master Switches\" as a way to turn off ArloPilot features such as event handling."
@@ -641,6 +710,7 @@ def cameraPage()
 {
 	def arloCameraDevices = arloDevices("camera")
 	def arloQCameraDevices = arloDevices("arloq")
+	def activeCameras = getActiveArloCameras()
 	def arloBase
 
 	dynamicPage(name: "cameraPage", title: "ArloPilot - Discovered Cameras", nextPage: "mainPage", install: false, uninstall: false)
@@ -657,73 +727,197 @@ def cameraPage()
 		{
 			arloCameraDevices.each
 			{
-				arloBase = getArloDevice(it.parentId)
-				href title: it.deviceName, description: "${arloBase?.deviceName}", image: it.presignedLastImageUrl, url: it.presignedLastImageUrl
+				if (activeCameras.find{cam -> cam.deviceId == it.deviceId})
+				{
+					arloBase = getArloDevice(it.parentId)
+
+					if (isEndpointEnabled && settings.virtualCameraTiles.find{dev-> dev == it.deviceId})
+					{
+						href "cameraEndpointDetails", title: it.deviceName, description: "${arloBase?.deviceName}\nTap to view link to this camera.", image: it.presignedLastImageUrl, params: [deviceId: it.deviceId]
+					}
+					else
+					{
+						href title: it.deviceName, description: "${arloBase?.deviceName}", image: it.presignedLastImageUrl, url: it.presignedLastImageUrl
+					}
+				}
 			}
 		}
 		section("Arlo-Q / Arlo-Q2 Cameras")
 		{
 			arloQCameraDevices.each
 			{
-				href title: it.deviceName, image: it.presignedLastImageUrl, url: it.presignedLastImageUrl
+				if (activeCameras.find{cam -> cam.deviceId == it.deviceId})
+				{
+					if (isEndpointEnabled && settings.virtualCameraTiles.find{dev-> dev == it.deviceId})
+					{
+						href "cameraEndpointDetails", title: it.deviceName, description: "Tap to view link to this camera.", image: it.presignedLastImageUrl, params: [deviceId: it.deviceId]
+					}
+					else
+					{
+						href title: it.deviceName, image: it.presignedLastImageUrl, url: it.presignedLastImageUrl
+					}
+				}
 			}
 		}
 	}
 }
 
+
 /*
-	configureDeviceActions
+	externalAccess
 
-	UI Page: Configures a specific device for a specific SmartThings mode.
+	UI Page: Configures external access (oAuth).
+
+	Added: v1.4
 */
-def configureDeviceActions()
+def externalAccess()
 {
-	def arloCameraCapableDevices = parent.arloDevices()
-	arloCameraCapableDevices.removeAll{it.deviceType == "basestation" || it.deviceType == "siren"}
+	if (!state.installed) createArloPilotEndpoint()
 
-	Map arloCameras = [:]
-	arloCameraCapableDevices?.each {
-		arloCameras << [(it.deviceId): it.deviceName]
-	}
-
-	Map switchOnCameras = parent.deviceXORFilter(arloCameras, settings.devAction_CamOff)
-	Map switchOffCameras = parent.deviceXORFilter(arloCameras, settings.devAction_CamOn)
-	Map nightVisionOnCameras = parent.deviceXORFilter(arloCameras, settings.devAction_NightVisionOff)
-	Map nightVisionOffCameras = parent.deviceXORFilter(arloCameras, settings.devAction_NightVisionOn)
-
-	Map powerSaveLowCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveOptimal, settings.devAction_PowerSaveHigh)
-	Map powerSaveOptimalCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveLow, settings.devAction_PowerSaveHigh)
-	Map powerSaveHighCameras = parent.deviceXORFilter(arloCameras, settings.devAction_PowerSaveLow, settings.devAction_PowerSaveOptimal)
-
-	dynamicPage(name: "configureDeviceActions", title: "ArloPilot Device Actions", nextPage: "mainPage", install: false, uninstall: false)
+	dynamicPage(name: "externalAccess", title: "ArloPilot External Access", uninstall: false, install: false)
 	{
 		section()
 		{
-			paragraph "ArloPilot Device Actions enable changing individual camera parameters when SmartThings mode changes occur."
-			if (!automationEnabled && (app.label != null && app.label != app.name))
-				paragraph title: "Automation Disabled!", required: true, "This automation has been disabled.  It can be enabled using the switch below."
-
+			if (isEndpointEnabled)
+			{
+				paragraph "ArloPilot External Access is Enabled!"
+				href "confirmTokenReset", title: "Reset Security Token", description: "Reset the ArloPilot oAuth security token..."
+			}
+			else paragraph "To enable external access to specific ArloPilot features, visit the ArloPilot app in the SmartApps section in the SmartThings IDE.  Locate and click \"Edit Properties\" then scroll down to the section titled \"OAuth\" and click \"Enable OAuth in Smart App\". Click \"Update\" then Done to finish.", title: "Enable OAuth for external access to ArloPilot", required: true, state: null
 		}
-
-		section("Camera Control")
+		if (isEndpointEnabled || createArloPilotEndpoint())
 		{
-			input "devAction_CamOn", "enum", title: "Enable Recording", description: "Disable privacy mode on these cameras...", options: switchOnCameras, multiple: true, required: false, submitOnChange: true
-			input "devAction_CamOff", "enum", title: "Disable Recording", description: "Enable privacy mode on these cameras...", options: switchOffCameras, multiple: true, required: false, submitOnChange: true
+			section()
+			{
+				input "enableEndpoint", "bool", title: "Enable External Access?", description: "Enable SmartThings endpoint for external access to specific features.", defaultValue: true, required: true, multiple: false
+			}
 		}
-		section("Night Vision Control")
+		section()
 		{
-			input "devAction_NightVisionOn", "enum", title: "Enable Night Vision", description: "Enable night vision on these cameras...", options: nightVisionOnCameras, multiple: true, required: false, submitOnChange: true
-			input "devAction_NightVisionOff", "enum", title: "Disable Night Vision", description: "Disable night vision on these cameras...", options: nightVisionOffCameras, multiple: true, required: false, submitOnChange: true
-		}
-		section("Power Saver Control")
-		{
-			input "devAction_PowerSaveLow", "enum", title: "Best Video", description: "Set these cameras to the highest video quality...", options: powerSaveLowCameras, multiple: true, required: false, submitOnChange: true
-			input "devAction_PowerSaveOptimal", "enum", title: "Optimal", description: "Set these cameras an optimal balance of video quality and battery life...", options: powerSaveOptimalCameras, multiple: true, required: false, submitOnChange: true
-			input "devAction_PowerSaveHigh", "enum", title: "Best Battery Life", description: "Set these cameras to optimize battery life...", options: powerSaveHighCameras, multiple: true, required: false, submitOnChange: true
+			href "mainPage", title: "Home", description: "Return to ArloPilot main menu..."
 		}
 	}
 }
 
+
+/*
+	confirmTokenReset
+
+	UI Page: Warns and prompt the user to reset the oAuth token.
+
+	Added: v1.4
+*/
+def confirmTokenReset()
+{
+	dynamicPage(name: "confirmTokenReset", title: "ArloPilot External Access - Confirm Token Reset", uninstall: false, install: false)
+	{
+		section()
+		{
+			paragraph "Resetting the security break all external links!  These will need to be re-created after the token has been reset.", title: "WARNING...  Action cannot be undone!", required: true
+			href "resetSecurityToken", title: "", description: "Proceed to Reset Security Token", required: true
+		}
+		section("Navigation")
+		{
+			href "externalAccess", title: "External Access", description: "Return to External Access menu..."
+			href "mainPage", title: "Home", description: "Return to ArloPilot main menu..."
+		}
+	}
+}
+
+
+/*
+	resetSecurityToken
+
+	UI Page: Resets the oAuth token.
+
+	Added: v1.4
+*/
+def resetSecurityToken()
+{
+	state.stEndpoint = null
+
+	def endPoint = createArloPilotEndpoint()
+	logDebug "New ArloPilot endpoint created: ${endPoint}"
+
+	dynamicPage(name: "resetSecurityToken", title: "ArloPilot External Access - Security Token Reset!", uninstall: false, install: false)
+	{
+		section()
+		{
+			paragraph "The ArloPilot security token has been reset; all external links will need to be updated."
+		}
+		section("Navigation")
+		{
+			href "externalAccess", title: "External Access", description: "Return to External Access menu..."
+			href "mainPage", title: "Home", description: "Return to ArloPilot main menu..."
+		}
+	}
+}
+
+
+
+
+
+/*
+	cameraEndpointDetails
+
+	UI Page: Provides external endpoint URL's on devices enabled for external access.
+
+	Added: v1.4
+*/
+def cameraEndpointDetails(params)
+{
+	if (params?.deviceId == null) return cameraPage()
+	def arloDevice = getArloDevice(params.deviceId)
+	if (!arloDevice) return cameraPage()
+
+	def imageURL = "${state.stEndpoint}latestimage/${params.deviceId}"
+
+	dynamicPage(name: "cameraEndpointDetails", title: "ArloPilot External Access - ${arloDevice.deviceName}", uninstall: false, install: false)
+	{
+		section()
+		{
+			if (isEndpointEnabled && settings.virtualCameraTiles.find{it == params.deviceId})
+			{
+				logInfo "URL for \"${arloDevice.deviceName}\" latest still: ${imageURL}"
+				paragraph "This Arlo camera has been enabled for external web access to still images.  The link is displayed below, it is also displayed in the IDE logs."
+				paragraph imageURL, title: arloDevice.deviceName
+				href title: "Open in Browser", description: "View this link in an external browser.", url: imageURL, style: "external"
+			}
+			else paragraph "External access has not been enabled.  Please check ArloPilot settings to enable web access to this device.", title: "External Access Disabled!", required: true
+		}
+		section("Navigation")
+		{
+			href "cameraPage", title: "Arlo Cameras", description: "Show discovered Arlo cameras."
+			href "externalAccess", title: "External Access", description: "Return to External Access menu..."
+			href "mainPage", title: "Home", description: "Return to ArloPilot main menu..."
+		}
+	}
+}
+
+
+/*
+	virtualCameraTiles
+
+	UI Page: Configures external access (oAuth).
+
+	Added: v1.4
+*/
+def virtualCameraTiles()
+{
+	def arloCameras = getActiveArloCamerasKV()
+
+	dynamicPage(name: "virtualCameraTiles", title: "ArloPilot Virtual Camera Tiles", uninstall: false, install: false)
+	{
+		section("Camera Tiles")
+		{
+			input "virtualCameraTiles", "enum", title: "Create Camera Tiles", options: arloCameras, description: "Create a virtual camera device with a carousel of latest stills.  This device can also be accessed through the web if external access is enabled.", multiple: true, required: false
+		}
+		section()
+		{
+			href "mainPage", title: "Home", description: "Return to ArloPilot main menu..."
+		}
+	}
+}
 
 
 /*
@@ -1249,6 +1443,51 @@ Map getSelectedArloBases()
 
 
 /*
+	getActiveArloCameras
+
+	Returns a list of active Arlo and/or Arlo-Q cameras.
+
+	Added: v1.4
+*/
+public List getActiveArloCameras()
+{
+	List arloCameraCapableDevices = []
+
+	state.selectedDevices.each
+	{deviceId->
+		def arloBase = getArloDevice(deviceId)
+		arloCameraCapableDevices = arloCameraCapableDevices +  arloDevices("", arloBase.deviceId)
+	}
+	arloCameraCapableDevices?.removeAll{it.deviceType == "basestation" || it.deviceType == "siren"}
+
+	return arloCameraCapableDevices
+}
+
+
+/*
+	getActiveArloCamerasKV
+
+	Returns a key/value Map [deviceId: deviceName] of Arlo and/or Arlo-Q cameras for use in preferences.
+
+	Added: v1.4
+*/
+public Map getActiveArloCamerasKV()
+{
+	List arloCameraCapableDevices = getActiveArloCameras()
+
+	Map arloCamerasKV = [:]
+
+	arloCameraCapableDevices?.each
+	{device->
+		arloCamerasKV << ["${device.deviceId}": device.deviceName]
+	}
+	logDebug "Returning ${arloCamerasKV} to child."
+
+	return arloCamerasKV
+}
+
+
+/*
 	getArloDevice
 
 	Returns an object containing the full Arlo device details as returned from the cloud (or cache).
@@ -1453,6 +1692,103 @@ private getShmDeviceActions(shmMode)
 
 
 /*
+	getIsEndpointEnabled
+
+	Returns true if the oAuth endpoint is active, false if not.
+
+	Added: v1.4
+*/
+def getIsEndpointEnabled()
+{
+	return (settings?.enableEndpoint != null && settings?.enableEndpoint) && state?.stEndpoint
+}
+
+
+/*
+	createArloPilotEndpoint
+
+	Creates an access token and enables the endpoint features (virtual camera tiles, etc.)
+
+	Added: v1.4
+*/
+private createArloPilotEndpoint()
+{
+	if (!state.stEndpoint)
+	{
+		try
+		{
+			def accessToken = createAccessToken()
+			if (accessToken)
+			{
+				state.stEndpoint = apiServerUrl("/api/token/${accessToken}/smartapps/installations/${app.id}/")
+				logTrace "createArloPilotEndpoint: Access Token [${errorException}] successfulyl created."
+			}
+		}
+		catch(errorException)
+		{
+			state.stEndpoint = null
+			logError "createArloPilotEndpoint: Failed to create endpoint; ${errorException}."
+		}
+	}
+	return state.stEndpoint
+}
+
+
+/*
+	getLatestStill
+
+	Outputs the latest saved Arlo still image as a binary stream for the camera specified by [params.deviceid].
+
+	Added: v1.4
+*/
+def getLatestStill()
+{
+	def deviceId = params.deviceid
+	ByteArrayInputStream imageBytes
+
+	if (deviceId)
+	{
+		imageBytes = getChildDevice("ArloPilot_${deviceId}")?.getLastImageBytes()
+	}
+
+	if (!imageBytes)
+	{
+		return false
+	} 
+	render contentType: "image/jpeg", data: imageBytes
+}
+
+
+/*
+	getLastImageURL
+
+	Returns the a pre-signed URL to the Arlo cloud for the latest captured still image.
+
+	Note: Called by a the child device.
+
+	Added: v1.4
+*/
+public def getLastImageURL(deviceId)
+{
+	if (deviceId)
+	{
+		// Invalidate the cache
+		state.arloDeviceCacheTS = 0
+
+		def arloDevice = getArloDevice(deviceId)
+		if (arloDevice)
+		{
+			logDebug "getLastImageURL: Returning pre-signed image URL ${arloDevice.presignedLastImageUrl}"
+			return arloDevice.presignedLastImageUrl
+		}
+	}
+
+	logError "getLastImageURL: Unable to fetch the latest image URL."
+	return false
+}
+
+
+/*
 	deviceXORFilter
 
 	Helper function to filter the list of camera devices.
@@ -1527,7 +1863,7 @@ private logError(msgOut)
 	log.error msgOut
 }
 
-private getAppVersion(){1.3}
+private getAppVersion(){1.4}
 
 private getVersionCheck()
 {
