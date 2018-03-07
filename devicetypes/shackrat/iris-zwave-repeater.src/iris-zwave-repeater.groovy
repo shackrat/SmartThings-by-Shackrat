@@ -29,6 +29,12 @@ metadata
 
 	preferences
 	{
+		section("Device Health")
+		{
+			paragraph "SmartThings is unable to accurately check the health of these devices.  Instead, the device can be checked every 30 minutes to ensure that it's online and healthy."
+			input "enablePing", "bool", title: "Enable device online check?", description: "Periodically check in with device to ensure it's online and healthy.", defaultValue: true, required: true, multiple: false
+		}
+
 		section("Device Logging")
 		{
 			paragraph "By default, only device status is reported.  If you are experiencing an issue with the SmartPlug, you can enable additional output in the IDE."
@@ -149,7 +155,12 @@ def configure()
 	sendCommand(zwave.associationV2.associationSet(groupingIdentifier:1, nodeId: zwaveHubNodeId))
 
 	// Check every 30 minutes to see if the device is responding.
-	runEvery30Minutes(refreshDevice)
+	if (enablePing)
+	{
+		logInfo("Periodic health check is enabled.")
+		runEvery30Minutes(refreshDevice)
+	}
+	else logInfo("Periodic health check is disabled.")
 }
 
 
@@ -551,6 +562,8 @@ def refresh()
 	if (state.manualRefresh == 1)
 	{
 		sendEvent(name: "lastTest", value: "FAILED due to TIMEOUT.", displayed: false)
+		state.manualRefresh = 0
+		return
 	}
 
 	state.manualRefresh = 1
