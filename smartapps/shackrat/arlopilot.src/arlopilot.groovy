@@ -1863,7 +1863,7 @@ private logError(msgOut)
 	log.error msgOut
 }
 
-private getAppVersion(){1.4}
+private getAppVersion(){1.5}
 
 private getVersionCheck()
 {
