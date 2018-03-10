@@ -34,7 +34,7 @@ metadata
 		section("Polling Options")
 		{
 			paragraph "Due to an incompatibility between the Arlo cloud and the SmartThings cloud, ArloPilot is unable to receive notifications from the Arlo cloud.\nTo refresh images, ArloPilot must periodically poll for changes."
-			input "pollInterval", "enum", title: "Polling Interval", description: "Time in minutes in which to check for updated still images. (Set to 0 to disable)", options: [0,1,5,10,15,30], multiple: false, required: false, defaultValue: 10			
+			input "pollInterval", "enum", title: "Polling Interval", description: "Time in minutes in which to check for updated still images. (Set to 0 to disable)", options: [0,5,10,15,30], multiple: false, required: false, defaultValue: 10			
 		}
 		section("Debug Logging")
 		{
@@ -56,7 +56,7 @@ metadata
 
 		standardTile("image", "device.image", width: 2, height: 2, decoration: "flat")
 		{
-			state "default", label: "", action: "refresh", icon:"st.camera.loading"
+			state "default", label: "", icon:"st.camera.take-photo"
 		}
 
 		valueTile("lastRefresh", "lastRefresh", width: 4, height: 2, inactiveLabel: false, decoration: "flat")
@@ -104,16 +104,16 @@ def initialize()
 {
 	state.lastImage = ""
 	state.lastImageUrl = ""
+	state.lastImageMd5 = ""
 	state.lastRefresh = 0
 
 	// Schedule polling of the Arlo cloud
-	switch (settings.pollInterval)
+	def pollingInterval = settings.pollInterval ? settings.pollInterval : 10
+	logTrace "initialize: Setting polling interval to ${pollingInterval}."
+	switch (pollingInterval.toInteger())
 	{
 		case 0:
 			unschedule()
-			break
-		case 1:
-			runEvery1Minute(refresh)
 			break
 		case 5:
 			runEvery5Minutes(refresh)
@@ -148,7 +148,7 @@ def refresh()
 		return
 	}
 
-	// Check for changes
+	// Check for URL changes
 	if (imgUrl == state.lastImageUrl)
 	{
 		logTrace "refresh: Nothing to refresh. The Arlo cloud returned no new image."
@@ -168,13 +168,21 @@ def refresh()
 					def imageName = getImageName()
 					try
 					{
-						storeImage(imageName, imageBytes)
-						state.lastImage = imageName
-						state.lastImageUrl = imgUrl
+						// Only store the image if it's changed
+						def imageMD5 = getImageMD5(imageBytes)
+ 						if (state.lastImageMd5 != imageMD5)
+						{
+							logTrace "refresh: Storing updated image from ArloCloud.  MD5: ${imageMD5}"
 
-						state.lastRefresh = now()
-						def timeString = new Date().format("MM-dd-yy h:mm:ss a", location.timeZone)
-						sendEvent(name: "lastRefresh", value: timeString, displayed: false)
+							storeImage(imageName, imageBytes)
+							state.lastImage = imageName
+							state.lastImageUrl = imgUrl
+							state.lastImageMd5 = imageMD5
+							state.lastRefresh = now()
+							def timeString = new Date().format("MM-dd-yy h:mm:ss a", location.timeZone)
+							sendEvent(name: "lastRefresh", value: timeString, displayed: false)
+						}
+						else logTrace "refresh: Image from ArloCloud has not changed.  MD5: ${imageMD5}"
 					}
 					catch (errorException)
 					{
@@ -190,7 +198,7 @@ def refresh()
 	}
 	catch (errorException)
 	{
-		log.debug "refresh: Error making request; ${errorException}"
+		logDebug "refresh: Error making request; ${errorException}"
 	}
 }
 
@@ -225,16 +233,45 @@ private getImageName()
 
 
 /*
+	getImageMD5
+
+	Generates a unique MD5 hash for ByteArrayInputStream [imageBytes]
+*/
+import java.security.MessageDigest;
+private getImageMD5(ByteArrayInputStream imageBytes)
+{
+	MessageDigest md5Digest = MessageDigest.getInstance("MD5")
+	byte[] byteBuffer = new byte[1024]
+	int bytesRead = 0
+
+	while (bytesRead != -1)
+	{
+		bytesRead = imageBytes.read(byteBuffer)
+		if (bytesRead > 0)
+		{
+			md5Digest.update(byteBuffer, 0, bytesRead)
+		}
+	}
+
+	imageBytes.reset();
+	imageBytes.skip(0);
+
+	def md5 = new BigInteger(1, md5Digest.digest()).toString(16).padLeft(32, '0')
+    return md5.toString()
+}
+
+
+/*
 	logDebug
 
 	Displays debug output to IDE logs based on user preference.
 */
 private logDebug(msgOut)
 {
-	if (settings.enableDebug)
-	{
+//	if (settings.enableDebug)
+//	{
 		log.debug msgOut
-	}
+//	}
 }
 
 
@@ -245,10 +282,10 @@ private logDebug(msgOut)
 */
 private logTrace(msgOut)
 {
-	if (settings.enableTrace)
-	{
+//	if (settings.enableTrace)
+//	{
 		log.trace msgOut
-	}
+//	}
 }
 
 
