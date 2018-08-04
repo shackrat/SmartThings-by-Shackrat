@@ -164,6 +164,7 @@ def initialize()
 	{
 		logTrace "initialize: Subscribing to SHM Events..."
 		subscribe(location, "alarmSystemStatus", SHMStateHandler)
+        subscribe(location, "securitySystemStatus", SHMStateHandler)
 	}
 
 	logInfo "ArloPilot Initialized."
@@ -981,6 +982,21 @@ def SHMStateHandler(evt)
 			notifyPush = settings.SHMArmStay_notifySendPush
 			break
 		case "off":
+			arloDevices = shmOffDevices
+			deviceActions = shmOffDeviceActions
+			notifyPush = settings.SHMArmOff_notifySendPush
+			break
+        case "armedAway":
+			arloDevices = shmAwayDevices
+			deviceActions = shmAwayDeviceActions
+			notifyPush = settings.SHMArmAway_notifySendPush
+			break
+		case "armedStay":
+			arloDevices = shmStayDevices
+			deviceActions = shmStayDeviceActions
+			notifyPush = settings.SHMArmStay_notifySendPush
+			break
+		case "disarmed":
 			arloDevices = shmOffDevices
 			deviceActions = shmOffDeviceActions
 			notifyPush = settings.SHMArmOff_notifySendPush
@@ -1863,7 +1879,7 @@ private logError(msgOut)
 	log.error msgOut
 }
 
-private getAppVersion(){1.5}
+private getAppVersion(){1.6}
 
 private getVersionCheck()
 {
