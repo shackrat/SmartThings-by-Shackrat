@@ -24,7 +24,7 @@ metadata
 		command "testCommunication"
 		command "interrogateDevice"
 
-		fingerprint prod: "0001", model: "0001", cc: "85,59,5A,72,73,86,5E",  deviceJoinName: "Iris Z-Wave Repeater"
+		fingerprint mfr: "0246", prod: "0001", model: "0001", cc: "85,59,5A,72,73,86,5E",  deviceJoinName: "Iris Z-Wave Repeater"
 	}
 
 	preferences
