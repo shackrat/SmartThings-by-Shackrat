@@ -1224,7 +1224,7 @@ def setArloMode(deviceId, modeId)
 					properties: [
 						active:				(modeId == "schedule" ? true : modeId)
 					],
-					active:				(modeId == "schedule" ? "active" : modeId),
+					// active:				(modeId == "schedule" ? "active" : modeId),
 					publishResponse:	(modeId == "schedule" ? true : false),
 					resource:			(modeId == "schedule" ? "schedule" : "modes"),
 					responseUrl:		"",
