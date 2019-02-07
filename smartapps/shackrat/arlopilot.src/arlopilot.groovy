@@ -1879,7 +1879,7 @@ private logError(msgOut)
 	log.error msgOut
 }
 
-private getAppVersion(){1.6}
+/** private getAppVersion(){1.6}
 
 private getVersionCheck()
 {
@@ -1908,4 +1908,4 @@ private getLatestVersion()
 		}
 	}
 	return state.latestVersion.toDouble()
-}
+} **/
