@@ -27,7 +27,7 @@ definition(
 	author: "Steve White",
 	description: "Enhanced Arlo System Integration.",
 	category: "My Apps",
-	iconUrl: https://farm9.staticflickr.com/8632/16461422990_e5121d68ee_o.jpg",
+	iconUrl: "https://farm9.staticflickr.com/8632/16461422990_e5121d68ee_o.jpg",
 	iconX2Url: "https://farm9.staticflickr.com/8632/16461422990_e5121d68ee_o.jpg",
 	iconX3Url: "https://farm9.staticflickr.com/8632/16461422990_e5121d68ee_o.jpg"
 )
