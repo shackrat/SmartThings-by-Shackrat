@@ -204,7 +204,7 @@ def mainPage()
 	{
 		section()
 		{
-			paragraph image: "https://storage.googleapis.com/arlopilot/arlo-small.png", "Enhanced Arlo Integration v${appVersion}"
+			paragraph image: "https://farm9.staticflickr.com/8632/16461422990_e5121d68ee_o.jpg", "Enhanced Arlo Integration"
 			if (versionCheck) paragraph title: "Update Available!", "An update to ArloPilot v${latestVersion} is available.", required: true
 		}
 		section("Connect")
