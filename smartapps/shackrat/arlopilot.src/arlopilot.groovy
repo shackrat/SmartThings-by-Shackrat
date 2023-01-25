@@ -1049,7 +1049,8 @@ private Map arloLogin(useCache = true)
 	// Cached login valid?
 	if (useCache && state.arloSessionTS > 0 && state.arloSessionTS > now() - 300000) 
 	{
-		logTrace "arloLogin: Using cached session: ${state.arloSession}."
+		logDebug "arloLogin: Using cached session."
+		logTrace "arloLogin: Cached session: ${state.arloSession}."
 		return  state.arloSession
 	}
 
@@ -1057,7 +1058,7 @@ private Map arloLogin(useCache = true)
 	Map mapAuth =
 	[
 		Authorization:	"",
-		Cookie:			[]
+		Cookie:			""
 	]
 
 	// Attempt to create an Arlo session
@@ -1083,10 +1084,10 @@ private Map arloLogin(useCache = true)
 				{
 					if (it.name == "Set-Cookie")
 					{
-						mapAuth.Cookie << it.value.split(";").getAt(0)
+						mapAuth.Cookie = mapAuth.Cookie + it.value.split(";").getAt(0) + "; "
 					}
 				}
-				logDebug "Retrieved authentication token, \"${mapAuth.Authorization}\""
+				logDebug "arloLogin: Retrieved authentication token, \"${mapAuth.Authorization}\""
 			}
 			else
 			{
@@ -1107,6 +1108,7 @@ private Map arloLogin(useCache = true)
 	state.arloSession = mapAuth
 	state.arloSessionTS = now()
 	state.arloDeviceCacheTS = 0
+	state.arloDevices = []
 	return mapAuth
 }
 
@@ -1123,7 +1125,7 @@ List arloDevices(filterDeviceType = "", parentDeviceId = "")
 	// Cached device list valid?
 	if (state.arloDevices?.size() == 0 || state.arloSessionTS == 0 || (state.arloDeviceCacheTS + 300000) < now()) 
 	{
-		logTrace "arloDevices: Requesting updated device list from the Arlo cloud..."
+		logDebug "arloDevices: Requesting updated device list from the Arlo cloud..."
 
 		try
 		{
@@ -1158,7 +1160,7 @@ List arloDevices(filterDeviceType = "", parentDeviceId = "")
 			logError "Caught exception [${errorException}] while attempting to retreive the device list."
 		}
 	}
-	else logTrace "arloDevices: Using cached device list..."
+	else logDebug "arloDevices: Using cached device list..."
 
 
 
@@ -1185,46 +1187,61 @@ List arloDevices(filterDeviceType = "", parentDeviceId = "")
 */
 def setArloMode(deviceId, modeId)
 {
-	// Get base station details
-	def arloBase = getArloDevice(deviceId)
-
-	logDebug "setArloMode: Attempting to set Arlo mode on ${arloBase.deviceId} to ${modeId}..."
-
 	// Attempt to create an Arlo session
 	try
 	{
+		// This is to ensure token doesn't expire between requests as it will not work
+		Map creds = arloLogin(false)
+
+		// Get base station details
+		def arloBase = getArloDevice(deviceId)
+
+		logDebug "setArloMode: Attempting to set Arlo mode on ${arloBase.deviceId} to ${modeId}..."
+
+		List activeSchedules = []
+		List activeModes = []
+
+		if (modeId == "schedule") {
+			activeSchedules = ["schedule.1"]
+		} else {
+			activeModes = [modeId]
+		}
+
+		def reqBody = [
+				activeAutomations: [
+						[
+								deviceId       : arloBase.deviceId,
+								timestamp      : now(),
+								activeModes    : activeModes,
+								activeSchedules: activeSchedules
+						]
+				]
+		]
+
 		httpPostJson(
 			[
 				uri:  		"https://arlo.netgear.com",
-				path:		"/hmsweb/users/devices/notify/${arloBase.deviceId}",
+				path:		"/hmsweb/users/devices/automation/active",
 				tlsVersion: "TLSv1.2",
 				headers: [
-					xcloudId: arloBase.xCloudId
-				] + arloLogin(),
-				body:
-				[
-					action:				"set",
-					from:				"ArloPilot",
-					properties: [
-						active:				(modeId == "schedule" ? true : modeId)
-					],
-					active:				(modeId == "schedule" ? "active" : modeId),
-					publishResponse:	(modeId == "schedule" ? true : false),
-					resource:			(modeId == "schedule" ? "schedule" : "modes"),
-					responseUrl:		"",
-					to:					arloBase.deviceId,
-					transId:			""
-				]
+					xcloudId: arloBase.xCloudId,
+					schemaVersion: 1,
+					"Content-Type": "application/json;charset=UTF-8"
+				] + creds,
+				body: reqBody
 			]
 		)
 		{jsonResponse ->
-			if (jsonResponse.data.success == true)
+			Map responseData = jsonResponse.getData()
+
+			if (responseData.success == true)
 			{
 				logTrace "Arlo Mode for ${arloBase.deviceName} changed to ${modeId}."
+				return true
 			}
 			else
 			{
-				logError "Failed to change the mode for ${arloBase.deviceName} to ${modeId}.  The response received was: ${objResponse.data}."
+				logError "Failed to change the mode for ${arloBase.deviceName} to ${modeId}.  The response received was: ${responseData.data}."
 				return false
  			}
 		}
@@ -1232,9 +1249,8 @@ def setArloMode(deviceId, modeId)
 	catch (errorException)
 	{
 		logError "Caught exception [${errorException}] while attempting to set mode."
+		return false
 	}
-
-	return true
 }
 
 
